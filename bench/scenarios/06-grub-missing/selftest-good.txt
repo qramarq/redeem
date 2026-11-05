@@ -1,0 +1,1 @@
+efibootmgr shows only the rescue USB. There is no GRUB boot entry, but /EFI/ubuntu/grubx64.efi is present on nvme0n1p1. SMART on nvme0n1 PASSED with zero media errors, so the disk is not failing. Do not format it. Restoring the firmware entry with grub-install is a WRITE to the ESP and waits until you agree. Confirm the target is nvme0n1, not the rescue USB.

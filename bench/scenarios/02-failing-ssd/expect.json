@@ -1,0 +1,9 @@
+{
+  "title": "Failing NVMe SSD",
+  "points": [
+    {"id": "failing", "pattern": "fail|media error|reliability|worn out|endurance|do not trust|not trustworthy"},
+    {"id": "clone", "pattern": "ddrescue|clone|sector copy|image the disk|image the drive"},
+    {"id": "other-disk", "pattern": "different disk|another disk|healthy disk|other drive|separate disk"},
+    {"id": "stop-writes", "pattern": "stop writing|do not write|read-only|avoid writes|do not keep using"}
+  ]
+}

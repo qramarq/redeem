@@ -1,0 +1,405 @@
+#!/usr/bin/env bash
+# redeem — one command to collect read-only diagnostics, retrieve knowledge-pack
+# notes, and start a local llama-server (or a remote OpenAI-compatible server).
+# The diagnostic dump is the first chat turn.
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: rescue-ai [--lan] [--cli] [--dry-run] [--no-chat]
+                 [--model ID] [--port N] [--context N]
+
+Picks a llama-server CPU build from /proc/cpuinfo (avx2, then avx, then sse4)
+and a GGUF from MemAvailable:
+  about 5 GB or more free  -> Qwen3-4B-Instruct-2507 Q4_K_M
+  otherwise, 1.5 GB or more -> Llama-3.2-1B-Instruct Q4_K_M
+  below that               -> Qwen3-0.6B Q4_K_M
+
+If RESCUE_ENDPOINT is set and answers /v1/models or /health, that server is
+used and the local weights stay unloaded. If it does not answer, redeem falls
+back to the USB model.
+
+--lan    bind 0.0.0.0 so a phone or tablet on the same network can open the UI
+--cli    chat in this terminal after the first turn
+--dry-run
+         collect diagnostics and print the choice, do not start a server
+--no-chat
+         print the first answer and exit (the local server is stopped)
+
+Writes wait for an explicit human OK. BitLocker is never unlocked.
+EOF
+}
+
+LAN=0
+CLI=0
+DRY=0
+NO_CHAT=0
+MODEL_REQ=${RESCUE_MODEL:-}
+PORT=${RESCUE_PORT:-8080}
+CTX_REQ=""
+SERVER_PID=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --lan) LAN=1; shift ;;
+    --cli) CLI=1; shift ;;
+    --dry-run) DRY=1; shift ;;
+    --no-chat) NO_CHAT=1; shift ;;
+    --model)
+      MODEL_REQ=${2:-}
+      shift 2
+      ;;
+    --port)
+      PORT=${2:-}
+      shift 2
+      ;;
+    --context)
+      CTX_REQ=${2:-}
+      shift 2
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'unknown argument: %s\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ ! $PORT =~ ^[0-9]+$ ]]; then
+  printf 'port must be a number\n' >&2
+  exit 2
+fi
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if [[ -n ${RESCUE_ROOT:-} ]]; then
+  root=$RESCUE_ROOT
+else
+  root=$(cd "$script_dir/.." && pwd)
+fi
+if [[ ! -d $root/kb ]]; then
+  printf 'knowledge pack not found under %s\n' "$root" >&2
+  exit 1
+fi
+
+if [[ -d $root/bin ]]; then
+  bin_dir=$root/bin
+  model_dir=$root/models
+elif [[ -d $root/build/cache/bin ]]; then
+  bin_dir=$root/build/cache/bin
+  model_dir=$root/build/cache/models
+else
+  bin_dir=$root/bin
+  model_dir=$root/models
+fi
+
+if [[ -f $root/build/models.tsv ]]; then
+  manifest=$root/build/models.tsv
+elif [[ -f $root/models/manifest.tsv ]]; then
+  manifest=$root/models/manifest.tsv
+else
+  manifest=$script_dir/../build/models.tsv
+fi
+
+TMP=${RESCUE_TMP:-/tmp/redeem}
+mkdir -p "$TMP"
+
+cleanup() {
+  if [[ -n $SERVER_PID ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+    kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+free_mb() {
+  awk '/MemAvailable:/ { printf "%d", $2 / 1024; exit }' /proc/meminfo
+}
+
+cpu_variant() {
+  local flags
+  flags=$(awk -F: '/^flags[[:space:]]*:/ { print $2; exit }' /proc/cpuinfo 2>/dev/null || true)
+  case " $flags " in
+    *" avx2 "*) printf 'avx2\n' ;;
+    *" avx "*) printf 'avx\n' ;;
+    *) printf 'sse4\n' ;;
+  esac
+}
+
+pick_binary() {
+  local variant=$1
+  local -a order=()
+  local name path
+  case $variant in
+    avx2) order=(avx2 avx sse4) ;;
+    avx) order=(avx sse4) ;;
+    *) order=(sse4) ;;
+  esac
+  for name in "${order[@]}"; do
+    path=$bin_dir/llama-server-$name
+    if [[ -x $path ]]; then
+      printf '%s\n' "$path"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Prints: id file min_free_mb role
+model_rows() {
+  awk -F '\t' 'NF >= 8 && $1 !~ /^#/ { print $1 "\t" $2 "\t" $7 "\t" $8 }' "$manifest"
+}
+
+pick_model() {
+  local want=$1
+  local free=$2
+  local id file path
+  local have_4b=0 have_1b=0 have_06=0
+  local path_4b="" path_1b="" path_06=""
+  while IFS=$'\t' read -r id file _min _role; do
+    path=$model_dir/$file
+    [[ -f $path ]] || continue
+    case $id in
+      qwen3-4b) have_4b=1; path_4b=$path ;;
+      llama32-1b) have_1b=1; path_1b=$path ;;
+      qwen3-0.6b) have_06=1; path_06=$path ;;
+    esac
+    if [[ -n $want && ( $id == "$want" || $file == *"$want"* ) ]]; then
+      printf '%s\n' "$path"
+      return 0
+    fi
+  done < <(model_rows)
+  if [[ -n $want ]]; then
+    return 1
+  fi
+  if ((free >= 5120 && have_4b == 1)); then
+    printf '%s\n' "$path_4b"
+    return 0
+  fi
+  if ((free >= 1536 && have_1b == 1)); then
+    printf '%s\n' "$path_1b"
+    return 0
+  fi
+  if ((have_06 == 1)); then
+    printf '%s\n' "$path_06"
+    return 0
+  fi
+  if ((have_1b == 1)); then
+    printf '%s\n' "$path_1b"
+    return 0
+  fi
+  if ((have_4b == 1)); then
+    printf '%s\n' "$path_4b"
+    return 0
+  fi
+  return 1
+}
+
+model_budget() {
+  local file=$1
+  # context, knowledge-pack bytes, diagnostic bytes, reply tokens
+  case $file in
+    *4B* | *4b*)
+      printf '4096 2200 4800 640\n'
+      ;;
+    *0.6B* | *0.6b*)
+      printf '3072 1200 3000 512\n'
+      ;;
+    *)
+      printf '3072 1400 3400 512\n'
+      ;;
+  esac
+}
+
+endpoint_ok() {
+  local base=${1%/}
+  local code
+  code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "$base/v1/models" || true)
+  if [[ $code == 200 ]]; then
+    return 0
+  fi
+  code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "$base/health" || true)
+  [[ $code == 200 ]]
+}
+
+variant=$(cpu_variant)
+free=$(free_mb)
+printf 'redeem: read-only session. Writes happen only after an explicit human OK.\n'
+printf 'redeem: BitLocker is detect-and-explain only. This tool will not unlock a volume.\n'
+printf 'redeem: cpu variant %s, MemAvailable %s MiB\n' "$variant" "$free"
+
+remote=""
+if [[ -n ${RESCUE_ENDPOINT:-} ]]; then
+  if endpoint_ok "$RESCUE_ENDPOINT"; then
+    remote=${RESCUE_ENDPOINT%/}
+    printf 'redeem: using RESCUE_ENDPOINT %s\n' "$remote"
+  else
+    printf 'redeem: RESCUE_ENDPOINT %s did not answer. Falling back to a local model.\n' "$RESCUE_ENDPOINT"
+  fi
+fi
+
+model_path=""
+binary=""
+if [[ -z $remote ]]; then
+  if [[ ! -f $manifest ]]; then
+    printf 'model manifest missing: %s\n' "$manifest" >&2
+    exit 1
+  fi
+  if ! model_path=$(pick_model "$MODEL_REQ" "$free"); then
+    printf 'no GGUF found in %s\n' "$model_dir" >&2
+    exit 1
+  fi
+  if ! binary=$(pick_binary "$variant"); then
+    printf 'no llama-server binary in %s\n' "$bin_dir" >&2
+    exit 1
+  fi
+  printf 'redeem: binary %s\n' "$binary"
+  printf 'redeem: model %s\n' "$model_path"
+fi
+
+read -r ctx kb_bytes diag_cap max_tokens <<<"$(model_budget "${model_path:-llama}")"
+if [[ -n $CTX_REQ ]]; then
+  if [[ ! $CTX_REQ =~ ^[0-9]+$ ]]; then
+    printf 'context must be a number\n' >&2
+    exit 2
+  fi
+  ctx=$CTX_REQ
+fi
+
+diag=$TMP/rescue-diag.txt
+"$script_dir/collect-diag.sh" --out "$diag" --max-bytes "$diag_cap"
+
+sys=$TMP/system.txt
+"$script_dir/build-prompt.sh" --diag "$diag" --kb "$root/kb" --kb-bytes "$kb_bytes" >"$sys"
+user_file=$TMP/user.txt
+{
+  printf '%s\n\n' "Diagnostics from this machine (read-only collection, nothing was repaired):"
+  cat "$diag"
+  printf '\n%s\n' "What is wrong, what is healthy, and what is the next read-only check? If a later step would write to a disk, label it WRITE and wait for an explicit human OK."
+} >"$user_file"
+
+if [[ $DRY -eq 1 ]]; then
+  printf 'redeem dry-run: context %s, kb budget %s bytes, diag cap %s bytes\n' "$ctx" "$kb_bytes" "$diag_cap"
+  printf '%s\n' '--- diagnostics ---'
+  head -n 40 "$diag"
+  printf '%s\n' '--- retrieved notes (headings) ---'
+  grep -E '^\[' "$sys" || true
+  exit 0
+fi
+
+bind_host=127.0.0.1
+if [[ $LAN -eq 1 ]]; then
+  bind_host=0.0.0.0
+fi
+
+base_url=""
+if [[ -n $remote ]]; then
+  base_url=$remote
+else
+  threads=$(nproc 2>/dev/null || echo 2)
+  if ((threads > 8)); then
+    threads=8
+  fi
+  help=$("$binary" --help 2>&1 || true)
+  args=("$binary" -m "$model_path" -c "$ctx" -t "$threads" --host "$bind_host" --port "$PORT" -ngl 0)
+  if grep -q -F -- '--reasoning' <<<"$help"; then
+    args+=(--reasoning off)
+  fi
+  if grep -q -F -- '--reasoning-budget' <<<"$help"; then
+    args+=(--reasoning-budget 0)
+  fi
+  if grep -q -F -- '--cache-ram' <<<"$help"; then
+    args+=(--cache-ram 0)
+  fi
+  if grep -q -F -- '--temp' <<<"$help"; then
+    args+=(--temp 0.2)
+  fi
+  if grep -q -F -- '--jinja' <<<"$help"; then
+    args+=(--jinja)
+  fi
+  if [[ -n ${RESCUE_API_KEY:-} ]] && grep -q -F -- '--api-key' <<<"$help"; then
+    args+=(--api-key "$RESCUE_API_KEY")
+  fi
+  log=$TMP/llama-server.log
+  "${args[@]}" >"$log" 2>&1 &
+  SERVER_PID=$!
+  printf 'redeem: starting llama-server pid %s, log %s\n' "$SERVER_PID" "$log"
+  ready=0
+  for _ in $(seq 1 180); do
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+      printf 'llama-server exited early. Last log lines:\n' >&2
+      tail -n 40 "$log" >&2 || true
+      exit 1
+    fi
+    if curl -sf --max-time 2 "http://127.0.0.1:${PORT}/health" | grep -q ok; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ $ready -ne 1 ]]; then
+    printf 'llama-server did not become ready. Last log lines:\n' >&2
+    tail -n 40 "$log" >&2 || true
+    exit 1
+  fi
+  base_url=http://127.0.0.1:${PORT}
+fi
+
+reply=$TMP/first-turn.txt
+result_json=$TMP/first-turn.json
+python3 "$script_dir/rescue-chat.py" \
+  --url "$base_url" \
+  --system-file "$sys" \
+  --api-key "${RESCUE_API_KEY:-}" \
+  --max-tokens "$max_tokens" \
+  --temperature 0.2 \
+  complete --user-file "$user_file" --out-json "$result_json" | tee "$reply"
+
+printf '\nredeem: first turn saved to %s\n' "$reply"
+ui_url=${base_url}
+if [[ -n $remote ]]; then
+  ui_url=$remote
+elif [[ $LAN -eq 1 ]]; then
+  printf 'redeem: companion mode. Phones and tablets cannot boot this USB.\n'
+  printf 'redeem: no authentication unless RESCUE_API_KEY is set. LAN only, not the public internet.\n'
+  if command -v ip >/dev/null 2>&1; then
+    while read -r addr; do
+      printf 'redeem: open http://%s:%s\n' "${addr%%/*}" "$PORT"
+    done < <(ip -4 -o addr show scope global | awk '{print $4}')
+  fi
+else
+  ui_url=http://127.0.0.1:${PORT}
+  printf 'redeem: web UI %s\n' "$ui_url"
+fi
+
+if [[ $NO_CHAT -eq 1 ]]; then
+  exit 0
+fi
+
+opened=0
+if [[ $CLI -eq 0 && -n ${DISPLAY:-} ]]; then
+  if command -v xdg-open >/dev/null 2>&1; then
+    if xdg-open "$ui_url" >/dev/null 2>&1; then
+      opened=1
+    fi
+  elif command -v firefox >/dev/null 2>&1; then
+    firefox "$ui_url" >/dev/null 2>&1 &
+    opened=1
+  fi
+fi
+
+if [[ $CLI -eq 1 || ( $opened -eq 0 && -t 0 ) ]]; then
+  python3 "$script_dir/rescue-chat.py" \
+    --url "$base_url" \
+    --system-file "$sys" \
+    --api-key "${RESCUE_API_KEY:-}" \
+    --max-tokens "$max_tokens" \
+    --temperature 0.2 \
+    repl --user-file "$user_file" --reply-file "$reply"
+elif [[ $opened -eq 1 && -n $SERVER_PID ]]; then
+  printf 'redeem: server is running. Ctrl-C stops it.\n'
+  wait "$SERVER_PID"
+fi

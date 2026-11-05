@@ -1,0 +1,23 @@
+# Downloaded ISOs, GGUF weights, Ventoy tarballs, llama.cpp source, and built binaries.
+# The git tree is the source for the stick, not the stick itself.
+*.iso
+*.gguf
+*.img
+*.qcow2
+*.partial
+*.fd
+ai/
+build/cache/
+build/src/
+build/work/
+bench/out/
+
+# Tool logs. The QEMU serial capture is kept on purpose.
+*.log
+!artifacts/qemu-serial.log
+
+__pycache__/
+*.pyc
+.venv/
+*~
+.DS_Store

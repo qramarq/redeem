@@ -1,0 +1,9 @@
+{
+  "title": "Healthy NVMe, SATA CRC errors",
+  "points": [
+    {"id": "crc-cable", "pattern": "crc|cable|sata port|adapter|interface"},
+    {"id": "media-clean", "pattern": "reallocat|pending|uncorrectable"},
+    {"id": "not-failing", "pattern": "not failing|healthy|passed|media (is|looks) (fine|ok|clean|healthy)"},
+    {"id": "no-wipe", "pattern": "do not (format|wipe|mkfs)|don't (format|wipe)|no need to (format|reinstall|wipe)"}
+  ]
+}

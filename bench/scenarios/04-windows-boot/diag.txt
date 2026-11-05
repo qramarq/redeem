@@ -1,0 +1,29 @@
+# lsblk
+NAME        SIZE TYPE FSTYPE LABEL
+nvme0n1     256G disk
+nvme0n1p1   100M part vfat   SYSTEM
+nvme0n1p2    16M part
+nvme0n1p3   255G part ntfs   Windows
+
+# smartctl -a /dev/nvme0n1
+Model Number: FORESEE XP1000
+Serial Number: FSXP00000001
+SMART overall-health self-assessment test result: PASSED
+Critical Warning:                   0x00
+Percentage Used:                    12%
+Media and Data Integrity Errors:    0
+
+# efibootmgr -v
+BootOrder: 0002,0000
+Boot0000* Windows Boot Manager HD(1,GPT)/File(\EFI\Microsoft\Boot\bootmgfw.efi)
+Boot0002* UEFI: Rescue USB
+# read-only listing of nvme0n1p1 (vfat ESP)
+/EFI/Boot/BOOTX64.EFI
+/EFI/Microsoft/Boot/bootmgr.efi
+bootmgfw.efi is absent from /EFI/Microsoft/Boot
+# dmesg
+no storage or filesystem error lines matched
+# ntfs
+/dev/nvme0n1p3 Volume Flags: clean
+# bitlocker
+no BitLocker signature and no crypto_LUKS partition seen

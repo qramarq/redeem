@@ -1,0 +1,29 @@
+# lsblk
+NAME        SIZE TYPE FSTYPE LABEL
+nvme0n1     512G disk
+nvme0n1p1   100M part vfat   SYSTEM
+nvme0n1p2    16M part
+nvme0n1p3   511G part ntfs   Windows
+
+# smartctl -a /dev/nvme0n1
+Model Number: SAMSUNG MZVL2512
+Serial Number: S6XNNVME0002
+SMART overall-health self-assessment test result: PASSED
+Critical Warning:                   0x00
+Percentage Used:                    8%
+Media and Data Integrity Errors:    0
+
+# ntfsinfo -m /dev/nvme0n1p3
+Volume Name: Windows
+Volume Flags: 0x0001
+        DIRTY
+Windows is hibernated. The volume will not mount read-write.
+# ntfsfix --no-action /dev/nvme0n1p3
+Checking the alternate boot sector... OK
+Volume is dirty. ntfsfix --no-action would not clear it.
+# dmesg
+no storage or filesystem error lines matched
+# bitlocker
+no BitLocker signature and no crypto_LUKS partition seen
+# efibootmgr -v
+Boot0000* Windows Boot Manager HD(1)/File(\EFI\Microsoft\Boot\bootmgfw.efi)

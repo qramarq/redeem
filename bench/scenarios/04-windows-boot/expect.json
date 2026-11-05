@@ -1,0 +1,9 @@
+{
+  "title": "Windows boot file missing, disk healthy",
+  "points": [
+    {"id": "boot-file", "pattern": "bootmgfw|boot manager"},
+    {"id": "missing", "pattern": "missing|absent|not (present|found|there)"},
+    {"id": "recovery", "pattern": "windows recovery|installation media|recovery media|winre"},
+    {"id": "disk-ok", "pattern": "not a dead disk|disk (is|looks) healthy|smart passed|do not format"}
+  ]
+}

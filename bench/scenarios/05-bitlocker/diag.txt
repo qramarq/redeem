@@ -1,0 +1,29 @@
+# lsblk
+NAME        SIZE TYPE FSTYPE     LABEL
+nvme0n1     512G disk
+nvme0n1p1   100M part vfat       SYSTEM
+nvme0n1p2    16M part
+nvme0n1p3   511G part BitLocker
+
+# blkid
+/dev/nvme0n1p1: TYPE="vfat" LABEL="SYSTEM"
+/dev/nvme0n1p3: TYPE="BitLocker"
+
+# boot sector read (8 bytes at offset 3) of /dev/nvme0n1p3
+-FVE-FS-
+
+# dislocker-find
+/dev/nvme0n1p3
+
+# smartctl -a /dev/nvme0n1
+Model Number: SAMSUNG MZVL2512
+Serial Number: S6XNNVME0003
+SMART overall-health self-assessment test result: PASSED
+Critical Warning:                   0x00
+Percentage Used:                    4%
+Media and Data Integrity Errors:    0
+
+# dmesg
+no storage or filesystem error lines matched
+# ntfs
+no NTFS superblock while the volume is locked

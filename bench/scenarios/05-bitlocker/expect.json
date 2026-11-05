@@ -1,0 +1,9 @@
+{
+  "title": "BitLocker volume, disk otherwise healthy",
+  "points": [
+    {"id": "encrypted", "pattern": "bitlocker|encrypt"},
+    {"id": "key-home", "pattern": "microsoft account|entra|active directory|printed|owner"},
+    {"id": "no-unlock", "pattern": "do not unlock|cannot unlock|will not unlock|do not decrypt|stays locked|stay locked"},
+    {"id": "clone-still-locked", "pattern": "still encrypted|ciphertext|clone stays|image stays encrypted|do not invent"}
+  ]
+}

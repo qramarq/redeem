@@ -1,0 +1,35 @@
+# lsblk
+NAME        SIZE TYPE FSTYPE LABEL
+nvme0n1     1T   disk
+nvme0n1p1   512M part vfat   EFI
+nvme0n1p2   930G part ext4
+
+# smartctl -a /dev/nvme0n1
+Model Number: CT1000P3SSD8
+Serial Number: 2240E6NVME01
+SMART overall-health self-assessment test result: FAILED
+Critical Warning:                   0x04
+Temperature:                        51 Celsius
+Available Spare:                    5%
+Available Spare Threshold:          10%
+Percentage Used:                    100%
+Media and Data Integrity Errors:    17
+Error Information Log Entries:      42
+
+# dmesg
+nvme0n1: I/O Cmd timeout
+nvme nvme0: resetting controller
+print_req_error: I/O error, dev nvme0n1, sector 883820544
+EXT4-fs error (device nvme0n1p2): ext4_journal_check_start:61: Detected aborted journal
+EXT4-fs (nvme0n1p2): Remounting filesystem read-only
+
+# blkid
+/dev/nvme0n1p1: TYPE="vfat"
+/dev/nvme0n1p2: TYPE="ext4"
+# efibootmgr -v
+BootCurrent: 0000
+Boot0000* ubuntu HD(1)/File(\EFI\ubuntu\grubx64.efi)
+# ntfs
+no NTFS partitions seen
+# bitlocker
+no BitLocker signature and no crypto_LUKS partition seen
