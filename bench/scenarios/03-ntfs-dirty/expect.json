@@ -1,0 +1,9 @@
+{
+  "title": "NTFS dirty bit and Fast Startup",
+  "points": [
+    {"id": "dirty", "pattern": "dirty|fast startup|hibernat"},
+    {"id": "ro-mount", "pattern": "read-only|\\bro\\b|do not mount.*(read-write|rw)"},
+    {"id": "chkdsk", "pattern": "chkdsk"},
+    {"id": "ntfsfix-limit", "pattern": "ntfsfix is not|not chkdsk|does not repair|not a full"}
+  ]
+}

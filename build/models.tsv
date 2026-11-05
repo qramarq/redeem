@@ -1,0 +1,6 @@
+# id	local_file	hf_repo	hf_file	sha256	bytes	min_free_mb	role
+# min_free_mb is MemAvailable before llama-server starts.
+# 4B is the upgrade pick, 1B is the 4 GB-RAM default, 0.6B is the emergency pick.
+llama32-1b	Llama-3.2-1B-Instruct-Q4_K_M.gguf	bartowski/Llama-3.2-1B-Instruct-GGUF	Llama-3.2-1B-Instruct-Q4_K_M.gguf	6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83	807694464	1536	default
+qwen3-0.6b	Qwen3-0.6B-Q4_K_M.gguf	bartowski/Qwen_Qwen3-0.6B-GGUF	Qwen_Qwen3-0.6B-Q4_K_M.gguf	9acfc1e001311f34b4252001b626f2e466d592a42065f66571bff3790d4e1b14	484220320	700	emergency
+qwen3-4b	Qwen3-4B-Instruct-2507-Q4_K_M.gguf	bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF	Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf	2fde00ce69dd4899c70d020845e2638353015bba0fdf161b3eb965f2bca4464e	2497280736	5120	upgrade

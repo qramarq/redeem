@@ -1,0 +1,30 @@
+# lsblk
+NAME        SIZE TYPE FSTYPE LABEL
+nvme0n1     256G disk
+nvme0n1p1   512M part vfat   EFI
+nvme0n1p2   255G part ext4
+
+# smartctl -a /dev/nvme0n1
+Model Number: SAMSUNG MZVL2256
+Serial Number: S6XNNVME0004
+SMART overall-health self-assessment test result: PASSED
+Critical Warning:                   0x00
+Percentage Used:                    6%
+Media and Data Integrity Errors:    0
+
+# efibootmgr -v
+BootOrder: 0003
+Boot0003* UEFI: Rescue USB
+no Linux or GRUB boot entry is present
+# read-only listing of nvme0n1p1
+/EFI/BOOT/BOOTX64.EFI
+/EFI/ubuntu/grubx64.efi
+/EFI/ubuntu/shimx64.efi
+# dmesg
+no storage or filesystem error lines matched
+# blkid
+/dev/nvme0n1p1: TYPE="vfat" LABEL="EFI"
+/dev/nvme0n1p2: TYPE="ext4"
+# ntfs / bitlocker
+no NTFS partitions seen
+no BitLocker signature and no crypto_LUKS partition seen

@@ -1,0 +1,9 @@
+{
+  "title": "GRUB files present, EFI boot entry missing",
+  "points": [
+    {"id": "entry", "pattern": "boot entry|nvram|efibootmgr|no grub entry|entry is missing"},
+    {"id": "files-present", "pattern": "grubx64|files are (still )?present|file is present|efi/ubuntu"},
+    {"id": "write-confirm", "pattern": "write|after you agree|human|confirm"},
+    {"id": "disk-healthy", "pattern": "smart passed|not failing|disk (is|looks) healthy|do not format"}
+  ]
+}

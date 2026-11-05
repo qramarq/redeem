@@ -1,0 +1,48 @@
+# lsblk
+NAME        SIZE TYPE FSTYPE LABEL UUID                                 MOUNTPOINTS
+nvme0n1     512G disk
+nvme0n1p1   512M part vfat   EFI   1111-2222
+nvme0n1p2   511G part ext4         9b1c2d3e-0000-4000-8000-000000000001 /
+
+# smartctl -a /dev/nvme0n1
+Model Number: SAMSUNG MZVL2512
+Serial Number: S6XNNVME0001
+Firmware Version: GXA7801Q
+SMART overall-health self-assessment test result: PASSED
+Critical Warning:                   0x00
+Temperature:                        34 Celsius
+Available Spare:                    100%
+Percentage Used:                    2%
+Media and Data Integrity Errors:    0
+Error Information Log Entries:      1
+
+# smartctl -a /dev/sda
+Device Model:     WDC WD10EZEX-00WN4A0
+Serial Number:    WD-WCC6Y0000001
+User Capacity:    1,000,204,886,016 bytes
+SMART overall-health self-assessment test result: PASSED
+ID# ATTRIBUTE_NAME          FLAG     VALUE WORST THRESH TYPE      RAW_VALUE
+  5 Reallocated_Sector_Ct   0x0033   100   100   010    Pre-fail  0
+  9 Power_On_Hours          0x0012   078   078   000    Old_age   18420
+197 Current_Pending_Sector  0x0012   100   100   000    Old_age   0
+198 Offline_Uncorrectable   0x0010   100   100   000    Old_age   0
+199 UDMA_CRC_Error_Count    0x003e   200   200   000    Old_age   14
+
+# dmesg
+ata3.00: exception Emask 0x10 SAct 0x0 SErr 0x280100 action 0x6
+ata3.00: irq_stat 0x08000000, interface fatal error
+ata3: hard resetting link
+ata3.00: configured for UDMA/133
+# blkid
+/dev/nvme0n1p1: LABEL="EFI" TYPE="vfat"
+/dev/nvme0n1p2: TYPE="ext4"
+/dev/sda1: TYPE="ext4"
+# efibootmgr -v
+BootCurrent: 0001
+Boot0001* ubuntu HD(1,GPT,aaa)/File(\EFI\ubuntu\grubx64.efi)
+# ntfs
+no NTFS partitions seen
+# bitlocker
+no BitLocker signature and no crypto_LUKS partition seen
+# journal
+no priority err lines

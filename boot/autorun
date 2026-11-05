@@ -1,0 +1,11 @@
+#!/bin/sh
+# Finder for rescue-ai. Run it by hand from a SystemRescue shell.
+# Stock SystemRescue does not contain this file, so it does not run at boot
+# unless you later add it as a SystemRescue autorun script yourself.
+set -eu
+found=$(find /run /mnt /media /root -path '*/ai/scripts/rescue-ai' -type f 2>/dev/null | head -n 1 || true)
+if [ -z "$found" ]; then
+  echo "redeem: ai/scripts/rescue-ai is not on a mounted filesystem" >&2
+  exit 1
+fi
+exec "$found" "$@"
