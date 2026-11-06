@@ -68,7 +68,11 @@ Rules you do not break:
 Notes retrieved from the offline pack (incomplete by design):
 EOF
 
-mapfile -t kb_files < <(find "$KB" -maxdepth 1 -type f -name '*.md' ! -name 'README.md' | sort)
+kb_files=()
+while IFS= read -r kb_path; do
+  [[ -n $kb_path ]] || continue
+  kb_files+=("$kb_path")
+done < <(find "$KB" -maxdepth 1 -type f -name '*.md' ! -name 'README.md' | sort)
 if [[ ${#kb_files[@]} -eq 0 ]]; then
   printf '\n[knowledge pack directory is empty]\n'
   exit 0

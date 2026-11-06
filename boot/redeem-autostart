@@ -1,0 +1,273 @@
+#!/usr/bin/env bash
+# Boot helper injected into SystemRescue.
+#   --stage mount     mount LABEL=Ventoy read-only and arm the console fallback
+#   --stage gui       start rescue-ai on the X desktop (--lan stays off)
+#   --stage fallback  if X never came up, run rescue-ai --cli on tty2
+# Read-only. Does not unlock BitLocker, FileVault, or LUKS, and does not pass --lan.
+set -euo pipefail
+
+STAGE=""
+FALLBACK_WAIT=22
+MOUNT=/mnt/ventoy
+
+usage() {
+    cat <<'EOF'
+usage: redeem-autostart --stage mount|gui|fallback
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --stage)
+            STAGE=${2:-}
+            shift 2
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        *)
+            printf 'redeem-autostart: unknown argument: %s\n' "$1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+done
+
+case $STAGE in
+    mount | gui | fallback) ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac
+
+self_path() {
+    if command -v readlink >/dev/null 2>&1; then
+        readlink -f -- "$0" 2>/dev/null || printf '%s\n' "$0"
+    else
+        printf '%s\n' "$0"
+    fi
+}
+
+x_running() {
+    if [[ -S /tmp/.X11-unix/X0 ]]; then
+        return 0
+    fi
+    local pid name
+    for pid in /proc/[0-9]*; do
+        [[ -r $pid/comm ]] || continue
+        name=$(cat "$pid/comm" 2>/dev/null || true)
+        case $name in
+            Xorg | X) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+llama_running() {
+    local pid comm
+    for pid in /proc/[0-9]*; do
+        [[ -r $pid/cmdline ]] || continue
+        comm=$(tr '\0' ' ' <"$pid/cmdline" 2>/dev/null || true)
+        case $comm in
+            *llama-server*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+dostartx_on() {
+    local cfg=/run/archiso/config/sysrescue-effective-config.json
+    if [[ -f $cfg ]]; then
+        if grep -q '"dostartx"[[:space:]]*:[[:space:]]*false' "$cfg"; then
+            return 1
+        fi
+    fi
+    return 0
+}
+
+mount_ro() {
+    local dev=$1 existing
+    mkdir -p "$MOUNT"
+    if findmnt -nro TARGET -S "$dev" 2>/dev/null | grep -qx "$MOUNT"; then
+        return 0
+    fi
+    existing=$(findmnt -nro TARGET -S "$dev" 2>/dev/null | head -n 1 || true)
+    if [[ -n $existing ]]; then
+        if ! mount -o bind,ro "$existing" "$MOUNT" 2>/dev/null; then
+            mount --bind "$existing" "$MOUNT"
+            mount -o remount,ro,bind "$MOUNT" 2>/dev/null || true
+        fi
+        return 0
+    fi
+    mount -o ro "$dev" "$MOUNT"
+}
+
+# True when ai/scripts/rescue-ai is visible at /mnt/ventoy.
+ventoy_ready() {
+    [[ -f $MOUNT/ai/scripts/rescue-ai ]]
+}
+
+locate_mounted() {
+    local found base
+    found=$(find /run /mnt /media -path '*/ai/scripts/rescue-ai' -type f -print -quit 2>/dev/null || true)
+    [[ -n $found ]] || return 1
+    base=${found%/ai/scripts/rescue-ai}
+    if [[ $base == "$MOUNT" ]]; then
+        return 0
+    fi
+    mkdir -p "$MOUNT"
+    if mountpoint -q "$MOUNT" 2>/dev/null; then
+        return 0
+    fi
+    mount -o bind,ro "$base" "$MOUNT" 2>/dev/null || mount --bind "$base" "$MOUNT"
+    ventoy_ready
+}
+
+scan_unmounted() {
+    local name type fstype label tmp dev
+    command -v lsblk >/dev/null 2>&1 || return 1
+    while read -r name type fstype label; do
+        [[ $type == part ]] || continue
+        case ${fstype:-} in
+            iso9660 | squashfs | swap | crypto_LUKS) continue ;;
+        esac
+        dev=/dev/$name
+        [[ -b $dev ]] || continue
+        if findmnt -nro TARGET -S "$dev" >/dev/null 2>&1; then
+            continue
+        fi
+        tmp=$(mktemp -d)
+        if ! mount -o ro "$dev" "$tmp" 2>/dev/null; then
+            rmdir "$tmp" 2>/dev/null || true
+            continue
+        fi
+        if [[ -f $tmp/ai/scripts/rescue-ai || $label == Ventoy ]]; then
+            umount "$tmp" 2>/dev/null || true
+            rmdir "$tmp" 2>/dev/null || true
+            mount_ro "$dev" || return 1
+            return 0
+        fi
+        umount "$tmp" 2>/dev/null || true
+        rmdir "$tmp" 2>/dev/null || true
+    done < <(lsblk -ln -o NAME,TYPE,FSTYPE,LABEL)
+    return 1
+}
+
+mount_ventoy() {
+    local dev deadline
+    if ventoy_ready; then
+        return 0
+    fi
+    deadline=$((SECONDS + 15))
+    while ((SECONDS < deadline)); do
+        if locate_mounted; then
+            return 0
+        fi
+        dev=$(findfs LABEL=Ventoy 2>/dev/null || true)
+        if [[ -z $dev ]] && command -v blkid >/dev/null 2>&1; then
+            dev=$(blkid -L Ventoy 2>/dev/null || true)
+        fi
+        if [[ -n $dev ]]; then
+            mkdir -p "$MOUNT"
+            if mount_ro "$dev"; then
+                return 0
+            fi
+        fi
+        sleep 1
+    done
+    scan_unmounted
+}
+
+run_rescue() {
+    local script=$MOUNT/ai/scripts/rescue-ai
+    if [[ ! -f $script ]]; then
+        printf 'redeem: %s is not on the Ventoy volume\n' "$script" >&2
+        return 1
+    fi
+    cd /root 2>/dev/null || true
+    if [[ -x $script ]]; then
+        "$script" "$@"
+    else
+        bash "$script" "$@"
+    fi
+}
+
+arm_fallback() {
+    local self unit
+    self=$(self_path)
+    if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
+        unit=/etc/systemd/system/redeem-fallback.service
+        cat >"$unit" <<EOF
+[Unit]
+Description=Redeem console fallback if Xorg did not start
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart="${self}" --stage fallback
+EOF
+        systemctl daemon-reload || true
+        if systemctl start --no-block redeem-fallback.service; then
+            return 0
+        fi
+    fi
+    ( "$self" --stage fallback ) >/tmp/redeem-fallback.log 2>&1 &
+}
+
+stage_mount() {
+    if dostartx_on; then
+        arm_fallback
+    fi
+    if ! mount_ventoy; then
+        printf 'redeem: LABEL=Ventoy was not mounted read-only within 15s\n' >&2
+        return 1
+    fi
+    printf 'redeem: Ventoy volume mounted read-only at %s\n' "$MOUNT"
+}
+
+stage_gui() {
+    mount_ventoy || return 1
+    if [[ -z ${DISPLAY:-} ]]; then
+        export DISPLAY=:0
+    fi
+    export BROWSER=${BROWSER:-firefox}
+    # Graphical rescue-ai opens the browser. --lan is not passed.
+    run_rescue
+}
+
+stage_fallback() {
+    local lock=/run/redeem-fallback.lock
+    mkdir -p /run
+    if command -v flock >/dev/null 2>&1; then
+        exec 9>"$lock"
+        if ! flock -n 9; then
+            exit 0
+        fi
+    fi
+    if ! dostartx_on; then
+        printf 'redeem: dostartx is off, console fallback stays idle\n'
+        exit 0
+    fi
+    sleep "$FALLBACK_WAIT"
+    if x_running || llama_running; then
+        printf 'redeem: graphical session is up, console fallback stays idle\n'
+        exit 0
+    fi
+    mount_ventoy || exit 1
+    if command -v chvt >/dev/null 2>&1; then
+        chvt 2 || true
+    fi
+    if [[ -c /dev/tty2 ]]; then
+        run_rescue --cli </dev/tty2 >/dev/tty2 2>&1
+    else
+        run_rescue --cli
+    fi
+}
+
+case $STAGE in
+    mount) stage_mount ;;
+    gui) stage_gui ;;
+    fallback) stage_fallback ;;
+esac

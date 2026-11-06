@@ -1,0 +1,23 @@
+---
+# SystemRescue effective config. Loaded from the initramfs by sysrescuecfg=/redeem.yaml.
+# tty1 is intentionally unset so dostartx can start X.Org on tty1.
+global:
+    dostartx: true
+
+autorun:
+    ar_disable: false
+    ar_nowait: true
+    ar_ignorefail: true
+    exec:
+        "050-redeem-mount":
+            path: "/usr/local/bin/redeem-autostart"
+            parameters:
+                - "--stage"
+                - "mount"
+            wait: never
+            on_error: continue
+
+gui_autostart:
+    "050-redeem-gui":
+        exec: "/usr/local/bin/redeem-autostart --stage gui"
+        terminal: true

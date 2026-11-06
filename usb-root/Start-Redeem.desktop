@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Start Redeem
+GenericName=Disk triage
+Comment=Read-only disk and boot triage. Does not unlock encryption.
+Terminal=true
+Categories=System;
+Exec=bash -c 'k="$1"; case "$k" in file://*) k=${k#file://};; esac; d=$(dirname "$(readlink -f "$k")"); exec bash "$d/Start-Redeem-Linux.sh"' redeem-desktop %k
