@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Read-only storage diagnostics for redeem.
 # Collects lsblk, blkid, smartctl -a, storage dmesg lines, efibootmgr -v,
-# NTFS dirty-bit and BitLocker detection, and journalctl -p err.
+# Secure Boot and TPM presence, NTFS dirty-bit and BitLocker header metadata,
+# and journalctl -p err.
 # Nothing in this script writes to a block device. The only ntfsfix call is ntfsfix --no-action.
-# BitLocker is detected and never unlocked.
+# BitLocker inspection is read-only and key-free. This script does not unlock.
 set -euo pipefail
 
 usage() {
@@ -215,6 +216,47 @@ else
   note "efibootmgr: not installed" >"$WORKDIR/efi.txt"
 fi
 
+# --- Secure Boot and TPM (read-only). Used to explain TPM auto-unlock trips. ---
+{
+  note "secure boot:"
+  sb_found=0
+  for sb_var in /sys/firmware/efi/efivars/SecureBoot-*; do
+    [[ -e $sb_var ]] || continue
+    sb_found=1
+    if sb_bytes=$(od -An -t u1 -- "$sb_var" 2>/dev/null); then
+      sb_val=$(awk '{ print $NF }' <<<"$sb_bytes")
+      if [[ $sb_val == 1 ]]; then
+        note "Secure Boot: enabled"
+      elif [[ $sb_val == 0 ]]; then
+        note "Secure Boot: disabled"
+      else
+        note "Secure Boot: present, value not 0 or 1"
+      fi
+    else
+      note "Secure Boot: EFI variable is not readable"
+    fi
+  done
+  if [[ $sb_found -eq 0 ]]; then
+    note "Secure Boot: EFI variable not found (not booted in UEFI, or efivarfs is not mounted)"
+  fi
+  if command -v mokutil >/dev/null 2>&1; then
+    mokutil --sb-state 2>&1 || true
+  fi
+  note "tpm:"
+  tpm_found=0
+  for tpm_dev in /sys/class/tpm/tpm*; do
+    [[ -e $tpm_dev ]] || continue
+    tpm_found=1
+    note "TPM device: $tpm_dev"
+    if [[ -r $tpm_dev/tpm_version_major ]]; then
+      note "tpm_version_major: $(cat "$tpm_dev/tpm_version_major")"
+    fi
+  done
+  if [[ $tpm_found -eq 0 ]]; then
+    note "no TPM device under /sys/class/tpm"
+  fi
+} >"$WORKDIR/firmware.txt"
+
 # --- partitions: NTFS dirty (read-only) and BitLocker signature ---
 : >"$WORKDIR/parts.txt"
 if command -v lsblk >/dev/null 2>&1; then
@@ -251,13 +293,24 @@ while read -r name fstype; do
         printf ' (blkid TYPE=BitLocker)'
       fi
       printf '\n'
-      printf 'read-only: volume stays locked. Do not unlock it from this toolkit.\n'
+      printf 'header inspection is read-only and does not ask for a key.\n'
     } >>"$WORKDIR/bitlocker.txt"
+    bitlk_helper=$(dirname -- "${BASH_SOURCE[0]}")/rescue-bitlocker.sh
+    if [[ -f $bitlk_helper ]]; then
+      # Keep efibootmgr/TPM in the firmware section. Do not duplicate them here.
+      REDEEM_BITLOCKER_NO_FIRMWARE=1 bash "$bitlk_helper" inspect "$dev" >>"$WORKDIR/bitlocker.txt" 2>>"$WORKDIR/bitlocker.txt" || true
+    else
+      note "rescue-bitlocker.sh: not found beside collect-diag.sh" >>"$WORKDIR/bitlocker.txt"
+    fi
     continue
   fi
 
   if [[ $fstype_lc == crypto_luks ]]; then
     printf '%s  crypto_LUKS (Linux disk encryption). Detect only. Do not open.\n' "$dev" >>"$WORKDIR/bitlocker.txt"
+    continue
+  fi
+  if command -v cryptsetup >/dev/null 2>&1 && cryptsetup isLuks "$dev" >/dev/null 2>&1; then
+    printf '%s  crypto_LUKS (cryptsetup isLuks). Detect only. Do not open.\n' "$dev" >>"$WORKDIR/bitlocker.txt"
     continue
   fi
 
@@ -321,7 +374,7 @@ fi
 # Keep the untrimmed bundle, capped so a noisy disk cannot fill /tmp.
 {
   printf '# redeem diagnostics full (read-only, no repairs applied)\n\n'
-  for src in host.txt lsblk.txt blkid.txt smart-full.txt dmesg.txt efi.txt ntfs.txt bitlocker.txt journal.txt; do
+  for src in host.txt lsblk.txt blkid.txt smart-full.txt dmesg.txt efi.txt firmware.txt ntfs.txt bitlocker.txt journal.txt; do
     printf '## %s\n' "${src%.txt}"
     cat "$WORKDIR/$src" 2>/dev/null || true
     printf '\n'
@@ -336,8 +389,9 @@ blkid_b=1000
 smart_b=3200
 dmesg_b=1600
 efi_b=1200
+firmware_b=900
 ntfs_b=1400
-bit_b=900
+bit_b=2200
 journal_b=1000
 
 write_section host "$WORKDIR/host.txt" "$host_b" "$WORKDIR/sec-host.txt"
@@ -346,6 +400,7 @@ write_section blkid "$WORKDIR/blkid.txt" "$blkid_b" "$WORKDIR/sec-blkid.txt"
 write_section smart "$WORKDIR/smart.txt" "$smart_b" "$WORKDIR/sec-smart.txt"
 write_section dmesg "$WORKDIR/dmesg.txt" "$dmesg_b" "$WORKDIR/sec-dmesg.txt"
 write_section efibootmgr "$WORKDIR/efi.txt" "$efi_b" "$WORKDIR/sec-efi.txt"
+write_section firmware "$WORKDIR/firmware.txt" "$firmware_b" "$WORKDIR/sec-firmware.txt"
 write_section ntfs "$WORKDIR/ntfs.txt" "$ntfs_b" "$WORKDIR/sec-ntfs.txt"
 write_section bitlocker "$WORKDIR/bitlocker.txt" "$bit_b" "$WORKDIR/sec-bitlocker.txt"
 write_section journal "$WORKDIR/journal.txt" "$journal_b" "$WORKDIR/sec-journal.txt"
@@ -359,6 +414,7 @@ write_section journal "$WORKDIR/journal.txt" "$journal_b" "$WORKDIR/sec-journal.
     "$WORKDIR/sec-dmesg.txt" \
     "$WORKDIR/sec-ntfs.txt" \
     "$WORKDIR/sec-bitlocker.txt" \
+    "$WORKDIR/sec-firmware.txt" \
     "$WORKDIR/sec-efi.txt" \
     "$WORKDIR/sec-lsblk.txt" \
     "$WORKDIR/sec-blkid.txt" \

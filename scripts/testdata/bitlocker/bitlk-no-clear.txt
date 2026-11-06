@@ -1,0 +1,21 @@
+Info for BITLK device /dev/nvme0n1p3.
+Version:      	2
+GUID:         	aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+Sector size:  	512 [bytes]
+Created:      	Thu Nov  5 12:00:00 2026
+Description:  	OFFICE-PC C: 11/5/2026
+Cipher name:  	aes
+Cipher mode:  	xts-plain64
+Cipher key:   	256 [bits]
+
+Keyslots:
+ 0: VMK
+	GUID:       	d00d1234-aaaa-bbbb-cccc-ddddeeeeffff
+	Protection: 	VMK protected with recovery passphrase
+	Salt:       	naclshouldnotappearintheoutput0001
+ 1: VMK
+	GUID:       	c0ffee01-aaaa-bbbb-cccc-ddddeeeeffff
+	Protection: 	VMK protected with TPM
+	Salt:       	naclshouldnotappearintheoutput0002
+ 2: FVEK
+	Key data size:	64 [bytes]

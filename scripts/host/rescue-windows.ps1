@@ -1,5 +1,7 @@
 # Read-only Windows storage triage for redeem.
-# BitLocker is status only. Unlock-BitLocker and manage-bde -unlock are not used.
+# BitLocker collection is status only: ids, types, lock, protection, percent encrypted.
+# Recovery passwords are stripped before anything is written. Unlock and manage-bde -off
+# belong to BitLocker-Windows.bat, which this script does not launch.
 # A later repair would be a WRITE and is not run by this script.
 param(
     [string]$UsbRoot = ""
@@ -20,7 +22,7 @@ $tmp = if ($env:RESCUE_TMP) { $env:RESCUE_TMP } else { Join-Path $env:TEMP 'rede
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 
 Write-Output "redeem: read-only session. Writes happen only after an explicit human OK."
-Write-Output "redeem: BitLocker is detect-and-explain only. This tool will not unlock a volume."
+Write-Output "redeem: BitLocker diagnostics list protector ids and types only. They do not unlock a volume and they do not record a recovery key."
 
 function Add-Section([System.Text.StringBuilder]$Buf, [string]$Title, [scriptblock]$Body) {
     [void]$Buf.AppendLine("")
@@ -43,11 +45,41 @@ Add-Section $diag 'physical-disk' { Get-PhysicalDisk | Format-List }
 Add-Section $diag 'partition' { Get-Partition | Format-List }
 Add-Section $diag 'volume' { Get-Volume | Format-List }
 Add-Section $diag 'bitlocker' {
-    if (-not (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue)) {
-        "Get-BitLockerVolume: not available. The volume was not unlocked."
-        return
+    $bde = Get-Command manage-bde.exe -ErrorAction SilentlyContinue
+    if ($bde) {
+        $status = & $bde.Source -status 2>&1 | Out-String
+        $status = [regex]::Replace($status, '\b\d{6}(?:-\d{6}){7}\b', '[redacted]')
+        $status
+        foreach ($match in [regex]::Matches($status, 'Volume ([A-Z]):')) {
+            $letter = $match.Groups[1].Value + ':'
+            "protectors $letter (ids and types only)"
+            $raw = & $bde.Source -protectors -get $letter 2>&1 | Out-String
+            foreach ($line in ($raw -split "`r?`n")) {
+                if ($line -match '^\s*Password:\s*$') { continue }
+                if ($line -match '^\s*Password:\s+\S') { continue }
+                if ($line -match '\b\d{6}(?:-\d{6}){7}\b') { continue }
+                if ($line -match 'ID:|Numerical Password:|TPM|External Key:|Startup Key:|All Key Protectors|Key Protector') {
+                    $line.TrimEnd()
+                }
+            }
+        }
+        if ($status -match 'Protection Off' -and $status -match 'Percentage Encrypted:\s+(?!0\.0%)') {
+            "Protection Off while encryption remains. Suspended BitLocker (clear key) is possible. Linux read-only mount: redeem-bitlocker unlock --clearkey DEVICE"
+        }
+    } else {
+        "manage-bde.exe: not found. The volume was not unlocked."
     }
-    Get-BitLockerVolume | Select-Object MountPoint, VolumeStatus, ProtectionStatus, EncryptionPercentage, LockStatus, VolumeType | Format-List
+    if (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) {
+        foreach ($vol in @(Get-BitLockerVolume -ErrorAction SilentlyContinue)) {
+            "MountPoint=$($vol.MountPoint) VolumeStatus=$($vol.VolumeStatus) ProtectionStatus=$($vol.ProtectionStatus) EncryptionPercentage=$($vol.EncryptionPercentage) LockStatus=$($vol.LockStatus) VolumeType=$($vol.VolumeType)"
+            foreach ($kp in @($vol.KeyProtector)) {
+                "ProtectorId=$($kp.KeyProtectorId) Type=$($kp.KeyProtectorType)"
+            }
+            if ($vol.ProtectionStatus -eq 'Off' -and $vol.EncryptionPercentage -gt 0) {
+                "Suspended: ProtectionStatus=Off EncryptionPercentage=$($vol.EncryptionPercentage). A clear key may be active."
+            }
+        }
+    }
 }
 Add-Section $diag 'system-log' {
     $start = (Get-Date).AddDays(-7)
@@ -59,7 +91,7 @@ Add-Section $diag 'system-log' {
     }
 }
 
-$diagText = $diag.ToString()
+$diagText = [regex]::Replace($diag.ToString(), '\b\d{6}(?:-\d{6}){7}\b', '[redacted]')
 if ($diagText.Length -gt 8000) { $diagText = $diagText.Substring(0, 8000) + "`n[truncated]`n" }
 $diagPath = Join-Path $tmp 'rescue-diag.txt'
 Set-Content -LiteralPath $diagPath -Value $diagText -Encoding utf8
@@ -117,9 +149,9 @@ $rules = @'
 You are Redeem, the offline rescue assistant. You triage disks and boot problems. Phones and tablets cannot boot the stick. They are browser clients only.
 
 Rules you do not break:
-- Read-only by default. A command that writes, formats, partitions, installs a bootloader, clears a dirty flag, deletes hibernation, or unlocks encryption is a WRITE. Describe a WRITE only together with the words that a person must agree before it is run. Never tell the user to run a WRITE immediately.
+- Read-only by default. A command that writes, formats, partitions, installs a bootloader, clears a dirty flag, deletes hibernation, or decrypts a disk in place is a WRITE. Describe a WRITE only together with the words that a person must agree before it is run. Never tell the user to run a WRITE immediately.
 - Use device names, serial numbers, sizes, and SMART or NVMe counts only when they appear in the diagnostics or the notes below. If a fact is missing, say so and name the next read-only command.
-- BitLocker and Linux LUKS: detect and explain only. You do not have a recovery key. Never print a recovery key or a string of digit groups that looks like one. Do not run dislocker, manage-bde, or cryptsetup.
+- BitLocker: never ask for a recovery key in this chat, never print a 48-digit key, and never put a key on a command line. Read-only file rescue is redeem-bitlocker unlock (Linux) or BitLocker-Windows.bat unlock (local prompt or a .bek path). A clear key (suspended BitLocker) mounts read-only with redeem-bitlocker unlock --clearkey and no key. TPM auto-unlock comes back when Secure Boot, CSM, and boot order are restored and Windows boots from the internal disk. Match the 8-character Key Protector ID at https://account.microsoft.com/devices/recoverykey, Entra ID, Active Directory, or a USB .bek file. Permanent removal is manage-bde -off via BitLocker-Windows.bat on a disk that is not failing SMART, after the owner types the confirmation phrase. Do not run ntfsfix, fsck, or chkdsk on a locked BitLocker volume. Do not claim the AES volume can be cracked. A sector clone stays encrypted. Linux LUKS: detect and explain only. Do not open it.
 - Never recommend mkfs, wipefs, shred, or dd from /dev/zero or /dev/urandom.
 - ntfsfix is not chkdsk. It only clears a dirty flag, and only a Windows chkdsk is a real NTFS check. Do not mention remove_hiberfile.
 - If the disk looks like it is failing, the preservation step is GNU ddrescue onto a different healthy disk. That WRITE waits for a person. Do not write to the failing disk. The rescue USB is too small for a big image.

@@ -1,0 +1,44 @@
+Info for BITLK device /dev/nvme0n1p3.
+Version:      	2
+GUID:         	11111111-2222-3333-4444-555555555555
+Sector size:  	512 [bytes]
+Volume size:  	549755813888 [bytes]
+Created:      	Thu Nov  5 12:00:00 2026
+Description:  	DESKTOP-TEST C: 11/5/2026
+Cipher name:  	aes
+Cipher mode:  	xts-plain64
+Cipher key:   	128 [bits]
+
+Keyslots:
+ 0: VMK
+	GUID:       	a1b2c3d4-1111-2222-3333-444444444444
+	Protection: 	VMK protected with recovery passphrase
+	Salt:       	deadbeefcafebabe0123456789abcdef
+	Key data size:	16 [bytes]
+ 1: VMK
+	GUID:       	bbccddee-1111-2222-3333-444444444444
+	Protection: 	VMK protected with TPM
+	Salt:       	ffeeddccbbaa99887766554433221100
+ 2: VMK
+	GUID:       	00112233-aaaa-bbbb-cccc-ddddeeeeffff
+	Protection: 	VMK protected with TPM and PIN
+ 3: VMK
+	GUID:       	44556677-aaaa-bbbb-cccc-ddddeeeeffff
+	Protection: 	VMK protected with startup key
+ 4: VMK
+	GUID:       	8899aabb-aaaa-bbbb-cccc-ddddeeeeffff
+	Protection: 	VMK protected with passphrase
+ 5: VMK
+	GUID:       	c1eac1ea-0000-1111-2222-333333333333
+	Protection: 	VMK protected with clear key
+	Salt:       	00112233445566778899aabbccddeeff
+ 6: VMK
+	GUID:       	d00d1234-aaaa-bbbb-cccc-ddddeeeeffff
+	Protection: 	VMK protected with smart card
+ 7: FVEK
+	Key data size:	64 [bytes]
+
+Metadata segments:
+ 0: FVE metadata area
+	Offset: 	1048576 [bytes]
+	Size:   	65536 [bytes]
