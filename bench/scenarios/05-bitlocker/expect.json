@@ -1,9 +1,13 @@
 {
-  "title": "BitLocker volume, disk otherwise healthy",
+  "title": "BitLocker volume, healthy disk, recovery protector, no clear key",
   "points": [
     {"id": "encrypted", "pattern": "bitlocker|encrypt"},
-    {"id": "key-home", "pattern": "microsoft account|entra|active directory|printed|owner"},
-    {"id": "no-unlock", "pattern": "do not unlock|cannot unlock|will not unlock|do not decrypt|stays locked|stay locked"},
-    {"id": "clone-still-locked", "pattern": "still encrypted|ciphertext|clone stays|image stays encrypted|do not invent"}
+    {"id": "key-id", "pattern": "A1B2C3D4|key id|protector"},
+    {"id": "key-home", "pattern": "account\\.microsoft\\.com|microsoft account|entra|active directory|\\.bek"},
+    {"id": "readonly-unlock", "pattern": "redeem-bitlocker|read-only|--readonly"},
+    {"id": "no-chat-key", "pattern": "do not paste|never paste|not paste"},
+    {"id": "no-crack", "pattern": "cannot be cracked|do not crack|no crack"},
+    {"id": "removal", "pattern": "manage-bde -off|BitLocker-Windows"},
+    {"id": "clone-still-locked", "pattern": "still encrypted|ciphertext|clone stays|image stays encrypted"}
   ]
 }

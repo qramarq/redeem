@@ -12,8 +12,22 @@ nvme0n1p3   511G part BitLocker
 # boot sector read (8 bytes at offset 3) of /dev/nvme0n1p3
 -FVE-FS-
 
-# dislocker-find
-/dev/nvme0n1p3
+# bitlocker header (cryptsetup bitlkDump, no key)
+source: cryptsetup-bitlkDump
+device: /dev/nvme0n1p3
+version: 2
+cipher: aes
+cipher_mode: xts-plain64
+cipher_key_bits: 128
+clear_key: no
+key_id: A1B2C3D4 guid: a1b2c3d4-1111-2222-3333-444444444444 type: recovery-password
+key_id: BBCCDDEE guid: bbccddee-1111-2222-3333-444444444444 type: tpm
+smart_health: passed
+
+# firmware
+Secure Boot: enabled
+TPM device: /sys/class/tpm/tpm0
+tpm_version_major: 2
 
 # smartctl -a /dev/nvme0n1
 Model Number: SAMSUNG MZVL2512

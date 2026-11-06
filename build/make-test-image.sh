@@ -25,8 +25,9 @@ usage: make-test-image.sh [--image FILE] [--size 16G] [--serial-console]
                           [--refuse-test]
 
 Creates a sparse raw image and installs Ventoy into it with -I -g -s.
-ISOs from build/cache/isos, the assembled ai/ tree, and usb-root/ (launchers
-and ventoy/) are copied onto the exFAT partition. --serial-console rewrites
+ISOs from build/cache/isos, the assembled ai/ tree, and usb-root/ (launchers,
+BitLocker-Windows.bat, and ventoy/) are copied onto the exFAT partition.
+--serial-console rewrites
 the image's GRUB config so a headless QEMU run can log the menu. Do not use
 that flag for a stick a person will boot on real hardware.
 

@@ -122,6 +122,9 @@ tar -czf "$out/redeem-initramfs.tar.gz" -C "$work/tar" \
 install -m 0644 "$work/grubsrcd.cfg" "$out/grubsrcd.cfg"
 install -m 0644 "$work/sysresccd_sys.cfg" "$out/sysresccd_sys.cfg"
 
+# HBCD_PE_x64.iso is not injected and is not the default. When that ISO sits
+# in the stick root, Ventoy lists it beside Clonezilla during the 5 second
+# timeout. SystemRescue stays VTOY_DEFAULT_IMAGE.
 python3 - "$out/ventoy.json" <<'PY'
 import json, pathlib, sys
 path = pathlib.Path(sys.argv[1])

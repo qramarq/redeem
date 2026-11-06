@@ -8,11 +8,11 @@ Phones and tablets cannot boot from USB. On the same Wi-Fi network or a hotspot 
 
 ## Safety
 
-Read-only by default. `rescue-ai` collects diagnostics and talks. It does not partition, format, mount a patient disk read-write, clear NTFS flags, install a bootloader, or unlock encryption.
+Read-only by default. `rescue-ai` collects diagnostics and talks. It does not partition, format, mount a patient disk read-write, clear NTFS flags, or install a bootloader.
 
 A command that would change a disk is a **WRITE**. The assistant is instructed to label it and wait for an explicit human OK. The scripts never send that OK.
 
-BitLocker is detect-and-explain only. There is no `dislocker` mount, no `manage-bde`, and no guessed recovery key. A sector clone of a BitLocker volume stays encrypted.
+BitLocker file rescue on Linux is `redeem-bitlocker`, and the mount is read-only. Permanent removal is `manage-bde -off` from Windows or Hiren's BootCD PE, only on a healthy disk after a confirmation phrase. The assistant must not ask for a recovery key in chat and must not invent one. A sector clone of a BitLocker volume stays encrypted. Details are in the BitLocker section below.
 
 The only `ntfsfix` call in this tree is `ntfsfix --no-action`. That is a read.
 
@@ -73,7 +73,7 @@ What each script writes:
 
 | Command | Result |
 | --- | --- |
-| `fetch-isos.sh` | `build/cache/ventoy/ventoy-1.1.18-linux.tar.gz`, `build/cache/isos/systemrescue-13.02-amd64.iso`, `build/cache/isos/clonezilla-live-3.3.3-37-amd64.iso` |
+| `fetch-isos.sh` | `build/cache/ventoy/ventoy-1.1.18-linux.tar.gz`, `build/cache/isos/systemrescue-13.02-amd64.iso`, `build/cache/isos/clonezilla-live-3.3.3-37-amd64.iso`. `--with-winpe` also fetches `HBCD_PE_x64.iso` |
 | `fetch-models.sh` | three GGUF files in `build/cache/models/` (3,789,195,520 bytes together). `--slim` fetches only the 1B model |
 | `build-llama.sh` | `build/cache/bin/llama-server-avx2`, `llama-server-avx`, `llama-server-sse4` from llama.cpp `v0.9.0` |
 | `fetch-host-binaries.sh` | optional CPU `llama-server` for Windows x64 and macOS arm64/x64, from llama.cpp `b12110` (the binary build named by the `v0.9.0` release) |
@@ -116,10 +116,11 @@ Two profiles. The scripts still refuse to flash a stick. You copy onto the stick
 
 | Profile | What is on the stick | Payload | Stick |
 | --- | --- | --- | --- |
-| Full | SystemRescue 13.02, Clonezilla live 3.3.3-37, the 0.6B, 1B, and 4B GGUFs, Linux `llama-server`, and the optional Windows and macOS CPU binaries | about 6.0–6.3 GB | **8 GB or larger**. 16 GB, or a 64 GB Toughmax, leaves room |
+| Full | SystemRescue 13.02, Clonezilla live 3.3.3-37, the 0.6B, 1B, and 4B GGUFs, Linux `llama-server`, and the optional Windows and macOS CPU binaries | about 6.0-6.3 GB | **8 GB or larger**. 16 GB, or a 64 GB Toughmax, leaves room |
 | Slim | SystemRescue 13.02 and Llama-3.2-1B-Instruct Q4_K_M | about 2.5 GB | **4 GB** |
+| Full + WinPE | The full set plus Hiren's BootCD PE x64 v1.0.8 (`--with-winpe`) | about 9.1-9.4 GB | **16 GB or larger** |
 
-Pinned sizes: the SystemRescue ISO is 1,381,629,952 bytes. The three GGUF files are 3,789,195,520 bytes together. The 1B file alone is 807,694,464 bytes. Slim is that ISO plus the 1B file, built with `--slim`. Ventoy's own partitions sit on top of the payload, which is why the slim stick is planned as 2.5 GB rather than the raw sum.
+Pinned sizes: the SystemRescue ISO is 1,381,629,952 bytes. The three GGUF files are 3,789,195,520 bytes together. The 1B file alone is 807,694,464 bytes. Slim is that ISO plus the 1B file, built with `--slim`. Hiren's BootCD PE x64 v1.0.8 is 3,291,686,912 bytes (about 3.06 GB) when `fetch-isos.sh --with-winpe` is used. Ventoy's own partitions sit on top of the payload, which is why the slim stick is planned as 2.5 GB rather than the raw sum and the WinPE stick is planned as 9.1-9.4 GB.
 
 `./build/fetch-host-binaries.sh` is optional. Skip it on a slim 4 GB stick if the extra Windows and macOS binaries would crowd the filesystem.
 
@@ -178,7 +179,15 @@ sudo cp -r --no-preserve=mode,ownership ai/. /mnt/ventoy/ai/
 sudo cp -r --no-preserve=mode,ownership usb-root/. /mnt/ventoy/
 ```
 
-`usb-root/` puts `Start-Redeem-Linux.sh`, `Start-Redeem.desktop`, `Start-Redeem-macOS.command`, and `Start-Redeem-Windows.bat` at the root of `LABEL=Ventoy`, and `ventoy/` next to them. The stock ISO files are copied unchanged. Ventoy applies `ventoy/ventoy.json` in memory at boot.
+Optional WinPE image, after `./build/fetch-isos.sh --with-winpe` or a verified `--winpe-iso` copy:
+
+```sh
+sudo cp --no-preserve=mode,ownership \
+  build/cache/isos/HBCD_PE_x64.iso \
+  /mnt/ventoy/
+```
+
+`usb-root/` puts `Start-Redeem-Linux.sh`, `Start-Redeem.desktop`, `Start-Redeem-macOS.command`, `Start-Redeem-Windows.bat`, and `BitLocker-Windows.bat` at the root of `LABEL=Ventoy`, and `ventoy/` next to them. The stock ISO files are copied unchanged. Ventoy applies `ventoy/ventoy.json` in memory at boot. SystemRescue stays the 5 second default. `HBCD_PE_x64.iso` is listed only when that file is on the stick.
 
 Skip the Clonezilla copy on a slim 4 GB stick. The full profile keeps it.
 
@@ -219,7 +228,7 @@ SystemRescue and Clonezilla are unsigned. Ventoy 1.1.18 still starts them after 
 
 After that loader is trusted, Ventoy's default does not re-check every EFI file inside an ISO. You are trusting Ventoy's boot path. SystemRescue itself is not signed.
 
-If the machine shows a Linpus lite error or a security violation and never offers the MOK screen, this stick will not boot there. Disabling Secure Boot can make Windows ask for the BitLocker recovery key on the next boot. Do that only when the owner already has the 48-digit key. This toolkit will not type it. There is no signed Ubuntu ISO on this stick as a fallback.
+If the machine shows a Linpus lite error or a security violation and never offers the MOK screen, this stick will not boot there. Disabling Secure Boot can make Windows ask for the BitLocker recovery key on the next boot. Do that only when the owner already has the 48-digit key, or when you are booting Hiren's BootCD PE to remove BitLocker and you will turn Secure Boot back on before the next Windows boot if BitLocker is still enabled. This toolkit will not type the key. There is no signed Ubuntu ISO on this stick as a fallback.
 
 ### 3. Ventoy boots SystemRescue with no keypress
 
@@ -229,6 +238,7 @@ If the machine shows a Linpus lite error or a security violation and never offer
 | --- | --- |
 | `systemrescue-13.02-amd64.iso` | Diagnostics, `rescue-ai`, or GNU ddrescue. This is the default. |
 | `clonezilla-live-3.3.3-37-amd64.iso` | The disk still reads cleanly and you want a filesystem-aware image onto a different disk. |
+| `HBCD_PE_x64.iso` | Optional. Offline `manage-bde -off` on a dead Windows PC. Present only after `--with-winpe` or `--winpe-iso`. Not the default. v1.0.8 may need Secure Boot off; SystemRescue does not, once the Ventoy MOK is enrolled. |
 
 The ISO file on the stick is the stock SystemRescue 13.02 image. Its SHA-256 stays `ad4d670b72859d887c7960142a9a9d36a3e50446694a035e254442f65d6e7572`. Ventoy's `conf_replace` swaps the boot menus in memory:
 
@@ -257,13 +267,14 @@ SystemRescue reads `/redeem.yaml` from the initramfs. Ventoy's injection plugin 
 
 ## Plug into a computer that is already on
 
-You do not have to reboot. The launchers live at the root of `LABEL=Ventoy`. All of them leave `--lan` off. None of them unlock BitLocker, FileVault, or LUKS.
+You do not have to reboot. The launchers live at the root of `LABEL=Ventoy`. All of them leave `--lan` off. `Start-Redeem-*.sh`, `.command`, and `.bat` do not unlock BitLocker, FileVault, or LUKS. `BitLocker-Windows.bat` is a separate tool. It does not run unless you start it.
 
 | File | What a double-click does |
 | --- | --- |
 | `Start-Redeem-Linux.sh` and `Start-Redeem.desktop` | Runs `ai/scripts/rescue-ai` on a Linux desktop and opens `http://127.0.0.1:8080`. With no display, it uses `--cli`. |
 | `Start-Redeem-macOS.command` | Finder opens Terminal. `ai/scripts/collect-diag-macos.sh` records `diskutil list`, `diskutil info`, APFS layout, `fdesetup status`, and recent storage log lines. BM25 runs over `ai/kb/*.md`. `llama-server` comes from `ai/bin/macos-arm64/` or `ai/bin/macos-x64/`, or from `RESCUE_ENDPOINT` when that server answers. The first turn is printed and the browser opens. |
-| `Start-Redeem-Windows.bat` | Explorer runs `ai/scripts/rescue-windows.ps1`. It records `Get-Disk`, `Get-PhysicalDisk`, `Get-Partition`, `Get-Volume`, `Get-BitLockerVolume` status, and recent Disk/NTFS System log errors. It ranks `ai/kb/*.md`, starts `ai/bin/win-x64/llama-server.exe` (CPU, model picked from `Win32_OperatingSystem.FreePhysicalMemory`), prints the first turn, and opens the browser. |
+| `Start-Redeem-Windows.bat` | Explorer runs `ai/scripts/rescue-windows.ps1`. It records `Get-Disk`, `Get-PhysicalDisk`, `Get-Partition`, `Get-Volume`, BitLocker status (protector ids and types only), and recent Disk/NTFS System log errors. It ranks `ai/kb/*.md`, starts `ai/bin/win-x64/llama-server.exe` (CPU, model picked from `Win32_OperatingSystem.FreePhysicalMemory`), prints the first turn, and opens the browser. |
+| `BitLocker-Windows.bat` | Status, local unlock, or `manage-bde -off` removal. Does not start the model. A recovery key is typed at the local prompt or read from a `.bek` path. |
 
 exFAT does not keep a Unix execute bit. On Linux, `bash Start-Redeem-Linux.sh` works if the kernel refuses to exec the file. On macOS, a `.command` file needs the execute bit the first time; Finder will offer to set it.
 
@@ -364,7 +375,7 @@ exFAT does not store a Unix execute bit. SystemRescue's default exFAT mount mode
 
 1. **CPU binary.** `/proc/cpuinfo` flags pick a ladder. `avx2` tries `ai/bin/llama-server-avx2`, then `llama-server-avx`, then `llama-server-sse4`. `avx` without `avx2` starts at `llama-server-avx`. Anything else uses `llama-server-sse4`. An AVX2 binary is never started unless the flags include `avx2`.
 2. **RAM model.** `MemAvailable` from `/proc/meminfo` picks the GGUF. At least 5120 MiB selects Qwen3-4B-Instruct-2507 Q4_K_M. Otherwise at least 1536 MiB selects Llama-3.2-1B-Instruct Q4_K_M. Below that, Qwen3-0.6B Q4_K_M. A missing file falls through to a model that is present.
-3. **Read-only dump** in `/tmp/redeem/rescue-diag.txt` (trimmed) and `/tmp/redeem/rescue-diag-full.txt` (fuller, capped at 1 MiB). `collect-diag.sh` runs `lsblk`, `blkid`, `smartctl -a`, storage lines from `dmesg`, `efibootmgr -v`, `ntfsinfo`, `ntfsfix --no-action`, a BitLocker signature check, and `journalctl -p err`. A missing tool is recorded. Nothing is repaired.
+3. **Read-only dump** in `/tmp/redeem/rescue-diag.txt` (trimmed) and `/tmp/redeem/rescue-diag-full.txt` (fuller, capped at 1 MiB). `collect-diag.sh` runs `lsblk`, `blkid`, `smartctl -a`, storage lines from `dmesg`, `efibootmgr -v`, Secure Boot state, TPM devices under `/sys/class/tpm`, `ntfsinfo`, `ntfsfix --no-action`, a BitLocker header inspection (protector ids and types, no key), and `journalctl -p err`. A missing tool is recorded. Nothing is repaired and no recovery key is collected.
 4. **BM25 retrieval.** `kb-retrieve.awk` ranks `ai/kb/*.md` sections. No embeddings and no network.
 5. **First diagnosis turn.** The dump is the first user message. The reply is printed and saved to `/tmp/redeem/first-turn.txt`.
 6. **UI.** Context is 4096 for the 4B model and 3072 for the 1B and 0.6B models. The server is CPU-only (`-ngl 0`), with `--cache-ram 0` and `--reasoning off` when that binary supports them. Threads are `nproc`, capped at 8.
@@ -448,6 +459,47 @@ Replace the address with the LAN server. A dead endpoint falls back to the USB m
 
 From a git checkout the same script is `./scripts/collect-diag.sh`.
 
+## BitLocker
+
+Two different jobs. Linux can read files. Only Windows can remove BitLocker.
+
+### Read-only file rescue (Linux)
+
+SystemRescue 13.02 already has cryptsetup 2.8.7 and dislocker 0.7.3. On the stick the helper is `/mnt/ventoy/ai/scripts/redeem-bitlocker` (the same file as `rescue-bitlocker.sh`).
+
+```sh
+redeem-bitlocker inspect /dev/nvme0n1p3
+redeem-bitlocker unlock /dev/nvme0n1p3 /mnt/windows
+redeem-bitlocker unlock --clearkey /dev/nvme0n1p3 /mnt/windows
+redeem-bitlocker unlock --bek /path/to/file.bek /dev/nvme0n1p3 /mnt/windows
+redeem-bitlocker lock /mnt/windows
+```
+
+`inspect` prints the BitLocker version, cipher, description, and each protector's 8-character Key ID and type. It does not ask for a key. `unlock` mounts `ro,nodev,nosuid,noexec`. A recovery password is read from `/dev/tty` and is not accepted as `--password` or `--key`. `--rw` is refused.
+
+### Permanent removal (Windows or Hiren's BootCD PE)
+
+Linux cannot convert the volume to plain NTFS. On a running Windows PC, or from Hiren's BootCD PE on the Ventoy menu:
+
+```text
+BitLocker-Windows.bat status
+BitLocker-Windows.bat unlock C:
+BitLocker-Windows.bat remove C:
+```
+
+`remove` checks disk health, reminds you about AC power, and runs `manage-bde -off` only after you type `DECRYPT C:`. Watch `manage-bde -status C:` until `Percentage Encrypted: 0.0%` and `Conversion Status: Fully Decrypted`. If SMART or `Get-Disk` says the disk is failing, the helper refuses. Copy files off read-only first. `manage-bde -off` rewrites every encrypted sector.
+
+Build the optional ISO with `./build/fetch-isos.sh --with-winpe`, or place your own verified WinPE / WinRE / Windows ISO with `--winpe-iso PATH --winpe-sha256 HEX`. Hiren's v1.0.8 may need Secure Boot disabled. SystemRescue on this stick does not, after the Ventoy MOK is enrolled. If you disable Secure Boot only to boot Hiren's, turn it back on before the next Windows boot when BitLocker is still on and you want the TPM to unlock by itself.
+
+`BitLocker-Windows.bat` uses `manage-bde.exe`, which WinPE and full Windows both have. If `powershell.exe` is missing, the `.bat` file still runs status, `.bek` unlock, the `manage-bde -Password` prompt, and removal. It will not put a 48-digit recovery password on a command line. That path uses PowerShell's in-process WMI call.
+
+### No recovery key
+
+1. `redeem-bitlocker inspect <partition>`. If it reports `clear_key: yes`, the volume is suspended (Windows Update, a BIOS update, or OEM device encryption that was never activated). `redeem-bitlocker unlock --clearkey <partition>` mounts it read-only with no key.
+2. If the only usable protector is TPM, put Secure Boot, CSM/Legacy, and the boot order back, then boot the internal disk instead of the USB stick. Windows unlocks itself. The diagnostics show Secure Boot, `efibootmgr -v`, and `/sys/class/tpm` so you can see what this boot changed.
+3. Match the 8-character Key ID from the dump at https://account.microsoft.com/devices/recoverykey, in Entra ID, in Active Directory, or on a USB `.bek` file.
+4. If no key exists and the TPM cannot unlock the volume, check SMART. A healthy disk can be reinstalled or repartitioned only with the owner's OK. A failing disk is cloned read-only onto a different disk first. This stick cannot crack BitLocker AES.
+
 ### Clone before any repair
 
 If SMART or `dmesg` says the disk is losing sectors, a write to that disk can turn a weak sector into a lost file. Image it onto a **different, healthy disk** first. The rescue USB is not the destination.
@@ -484,14 +536,16 @@ After an image file exists, run `testdisk`, `e2fsck -n`, `ntfsinfo`, or a read-o
 | `ai/models/manifest.tsv` | Copy of `build/models.tsv`. |
 | `ai/kb/` | Offline notes. Under 1 MB. No embeddings. |
 | `ai/scripts/rescue-ai` | Launcher. |
-| `ai/scripts/collect-diag.sh` | Read-only collector. |
+| `ai/scripts/collect-diag.sh` | Read-only collector, including BitLocker header ids and firmware state. |
+| `ai/scripts/redeem-bitlocker` | Read-only BitLocker inspect, unlock, and lock. Same bytes as `rescue-bitlocker.sh`. |
 | `ai/scripts/build-prompt.sh` | Safety rules plus retrieved notes. |
 | `ai/scripts/kb-retrieve.awk` | BM25 over `kb/`. |
 | `ai/scripts/rescue-chat.py` | OpenAI-compatible client and terminal chat. |
 | `ai/boot/autorun` | Finder, copied by `assemble-ai.sh`. |
 | `ai/scripts/redeem-autostart` | Same helper the initramfs injection installs. |
 | `ai/scripts/collect-diag-macos.sh` | Read-only macOS collector. |
-| `ai/scripts/rescue-windows.ps1` | Read-only Windows collector and launcher. |
+| `ai/scripts/rescue-windows.ps1` | Read-only Windows collector and launcher. BitLocker ids and types only. |
+| `ai/scripts/bitlocker-windows.ps1` | Windows and WinPE BitLocker status, unlock, and removal. |
 | `ai/bin/win-x64/llama-server.exe` | Optional. Present after `fetch-host-binaries.sh`. |
 | `ai/bin/macos-arm64/llama-server` | Optional. Apple silicon. |
 | `ai/bin/macos-x64/llama-server` | Optional. Intel Mac. |
@@ -503,6 +557,8 @@ After an image file exists, run `testdisk`, `e2fsck -n`, `ntfsinfo`, or a read-o
 | `Start-Redeem.desktop` | Same launcher from a file manager. |
 | `Start-Redeem-macOS.command` | macOS launcher. |
 | `Start-Redeem-Windows.bat` | Windows launcher. |
+| `BitLocker-Windows.bat` | BitLocker status, unlock, and removal. |
+| `HBCD_PE_x64.iso` | Optional Hiren's BootCD PE. Not the default boot entry. |
 | `boot/autorun` | Optional second copy of the finder. |
 
 `/dev/sdX2` (`VTOYEFI`) is Ventoy's EFI partition. Leave it for the firmware and the MOK certificate. There is no Ubuntu ISO in this version.
@@ -547,12 +603,13 @@ The 4B critical fail is an example `ddrescue` onto `/dev/sdb` and `/dev/sdb2`, d
 
 ```text
 scripts/rescue-ai                 Linux launcher
-scripts/collect-diag.sh           read-only lsblk, blkid, smartctl, dmesg, efibootmgr, NTFS, BitLocker, journal
+scripts/collect-diag.sh           read-only lsblk, blkid, smartctl, dmesg, efibootmgr, Secure Boot, TPM, NTFS, BitLocker, journal
+scripts/rescue-bitlocker.sh       read-only BitLocker inspect, unlock, and lock
 scripts/build-prompt.sh           safety rules plus retrieved notes
 scripts/kb-retrieve.awk           BM25 over kb/
 scripts/rescue-chat.py            OpenAI-compatible client and CLI
 scripts/test-offline.sh           shellcheck, rubric, collector, device refusal, Ventoy, watchers
-scripts/host/                     macOS and Windows collectors, UUID watcher installers
+scripts/host/                     macOS and Windows collectors, BitLocker helper, UUID watcher installers
 boot/autorun                      manual finder
 boot/redeem-autostart             mount, GUI, and tty2 fallback stages
 boot/redeem.yaml                  SystemRescue dostartx and autorun config
@@ -562,7 +619,7 @@ usb-root/                         launchers copied to the stick root
 build/versions.env                pinned ISO, Ventoy, llama.cpp, and host binary checksums
 build/models.tsv                  pinned GGUF names, hashes, sizes, roles
 build/lib.sh                      checksums, rtk wrapper, image-path refusal
-build/fetch-isos.sh               Ventoy, SystemRescue, Clonezilla
+build/fetch-isos.sh               Ventoy, SystemRescue, Clonezilla; optional Hiren's with --with-winpe
 build/fetch-models.sh             GGUF files; --slim keeps the 1B model
 build/fetch-host-binaries.sh      optional Windows and macOS llama-server
 build/build-llama.sh              avx2 / avx / sse4 llama-server
