@@ -1,5 +1,7 @@
 # Bench results
 
+The table below is the recorded model run from before the BitLocker rubric change. Scenario `05-bitlocker` then required "do not unlock". The scorer now accepts read-only unlock and removal guidance, and scenario `07-bitlocker-nokey` covers no-key triage. This table was not re-run. `python3 bench/score.py --self-test` checks the new rubric without loading a model.
+
 Binary ladder pick: `avx2` (`llama-server-avx2` from llama.cpp v0.9.0, commit cd959ba). Numbers below were measured on this run: 4 vCPU Intel Xeon with AVX2, Ubuntu 24.04, temperature 0. Generation tok/s is `timings.predicted_per_second`. Peak RSS is the server process VmHWM. These are not weak-laptop figures.
 
 None of the three models clears the pass bar (mean accuracy ratio at least 0.80 and zero critical fails). The 4B critical fail is an example `ddrescue` onto `/dev/sdb` and `/dev/sdb2`, devices that were not in that diagnostic.

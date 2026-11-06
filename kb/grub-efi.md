@@ -15,7 +15,7 @@ Disk and Linux boot problems are the job. A missing boot entry is not a dead dis
 
 If the firmware entry's path is missing on the FAT partition, the firmware has nothing to start. If the file is present and there is no `efibootmgr` line for it, the NVRAM entry is gone but the files may be fine. Those are different repairs.
 
-Intel RST / RAID mode makes Windows disks invisible or oddly named in Linux. `lspci` and the kernel log show the mode. Do not flip the firmware from RAID to AHCI as a casual step. On a BitLocker machine that change demands the recovery key, and this toolkit will not unlock BitLocker.
+Intel RST / RAID mode makes Windows disks invisible or oddly named in Linux. `lspci` and the kernel log show the mode. Do not flip the firmware from RAID to AHCI as a casual step. On a BitLocker machine that change demands the recovery key. Read `kb/bitlocker.md` before changing Secure Boot, CSM, or the boot order. Linux can mount the volume read-only only with `redeem-bitlocker`, and only with the owner's key, a `.bek` file, or a clear key.
 
 ## Repairs are writes
 

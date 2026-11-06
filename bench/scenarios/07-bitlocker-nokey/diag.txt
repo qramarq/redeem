@@ -1,0 +1,39 @@
+# lsblk
+NAME        SIZE TYPE FSTYPE     LABEL
+nvme0n1     512G disk
+nvme0n1p1   100M part vfat       SYSTEM
+nvme0n1p3   511G part BitLocker
+
+# blkid
+/dev/nvme0n1p3: TYPE="BitLocker"
+
+# boot sector read (8 bytes at offset 3) of /dev/nvme0n1p3
+-FVE-FS-
+
+# bitlocker header (cryptsetup bitlkDump, no key)
+source: cryptsetup-bitlkDump
+device: /dev/nvme0n1p3
+version: 2
+cipher: aes
+cipher_mode: xts-plain64
+clear_key: no
+key_id: D00D1234 guid: d00d1234-aaaa-bbbb-cccc-ddddeeeeffff type: recovery-password
+key_id: C0FFEE01 guid: c0ffee01-aaaa-bbbb-cccc-ddddeeeeffff type: tpm
+smart_health: passed
+
+# firmware
+Secure Boot: disabled
+BootOrder changed after a BIOS update
+TPM device: /sys/class/tpm/tpm0
+tpm_version_major: 2
+efibootmgr: USB is BootCurrent
+
+# smartctl -a /dev/nvme0n1
+Model Number: SAMSUNG MZVL2512
+Serial Number: S6XNNVME0003
+SMART overall-health self-assessment test result: PASSED
+Critical Warning:                   0x00
+Media and Data Integrity Errors:    0
+
+# dmesg
+no storage or filesystem error lines matched

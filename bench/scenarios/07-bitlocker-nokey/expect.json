@@ -1,0 +1,14 @@
+{
+  "title": "BitLocker with no clear key, TPM protector, Secure Boot off",
+  "points": [
+    {"id": "encrypted", "pattern": "bitlocker|encrypt"},
+    {"id": "clear-check", "pattern": "clear key: no|clear_key: no|no clear key|--clearkey"},
+    {"id": "tpm-restore", "pattern": "secure boot"},
+    {"id": "key-id", "pattern": "D00D1234"},
+    {"id": "lookup", "pattern": "account\\.microsoft\\.com|entra|active directory"},
+    {"id": "no-chat-key", "pattern": "do not paste|never paste"},
+    {"id": "no-crack", "pattern": "cannot be cracked|do not crack|no bypass"},
+    {"id": "reinstall", "pattern": "reinstall|repartition"},
+    {"id": "no-fsck", "pattern": "do not run ntfsfix|do not run chkdsk"}
+  ]
+}
