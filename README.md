@@ -2,7 +2,7 @@
 
 Offline rescue USB for disk and boot triage. This repository is the source for the stick: a Ventoy menu, SystemRescue 13.02, Clonezilla live 3.3.3-37, and an `ai/` tree that runs a local [llama.cpp](https://github.com/ggml-org/llama.cpp) server with no network.
 
-Build the payload on a working Linux PC, copy it onto a 64 GB USB stick by hand, boot the suspect PC from that stick, and run `rescue-ai` inside SystemRescue.
+Build the payload on a working Linux PC, copy it onto a USB stick by hand, and boot the suspect PC from that stick. With the Ventoy tree in place, SystemRescue starts `rescue-ai` on its own. Plugging the stick into a computer that is already running is a double-click, not a reboot.
 
 Phones and tablets cannot boot from USB. On the same Wi-Fi network or a hotspot they are browser clients only, through `rescue-ai --lan`.
 
@@ -57,8 +57,16 @@ Pinned URLs and checksums are in `build/versions.env` and `build/models.tsv`. Th
 ./build/fetch-isos.sh
 ./build/fetch-models.sh
 ./build/build-llama.sh
+./build/fetch-host-binaries.sh   # optional: Windows and macOS llama-server
 ./build/assemble-ai.sh
 ./scripts/test-offline.sh
+```
+
+A 4 GB stick uses the slim profile. It downloads and copies only Llama-3.2-1B-Instruct Q4_K_M:
+
+```sh
+./build/fetch-models.sh --slim
+./build/assemble-ai.sh --slim
 ```
 
 What each script writes:
@@ -66,10 +74,12 @@ What each script writes:
 | Command | Result |
 | --- | --- |
 | `fetch-isos.sh` | `build/cache/ventoy/ventoy-1.1.18-linux.tar.gz`, `build/cache/isos/systemrescue-13.02-amd64.iso`, `build/cache/isos/clonezilla-live-3.3.3-37-amd64.iso` |
-| `fetch-models.sh` | three GGUF files in `build/cache/models/` (3,789,195,520 bytes together) |
+| `fetch-models.sh` | three GGUF files in `build/cache/models/` (3,789,195,520 bytes together). `--slim` fetches only the 1B model |
 | `build-llama.sh` | `build/cache/bin/llama-server-avx2`, `llama-server-avx`, `llama-server-sse4` from llama.cpp `v0.9.0` |
-| `assemble-ai.sh` | `ai/` (scripts, `kb/`, `models/manifest.tsv`, binaries, GGUF files, `ai/boot/autorun`) |
-| `test-offline.sh` | shellcheck, rubric self-test, BM25 retrieval, `collect-diag.sh`, and the image-script device refusal. No model load. |
+| `fetch-host-binaries.sh` | optional CPU `llama-server` for Windows x64 and macOS arm64/x64, from llama.cpp `b12110` (the binary build named by the `v0.9.0` release) |
+| `assemble-ai.sh` | `ai/` (scripts, `kb/`, `models/manifest.tsv`, binaries, GGUF files, `ai/boot/autorun`) and `usb-root/ventoy/` |
+| `assemble-ventoy.sh` | `usb-root/ventoy/` (auto-boot config and the initramfs injection). Called by `assemble-ai.sh` |
+| `test-offline.sh` | shellcheck, rubric self-test, BM25 retrieval, `collect-diag.sh`, the image-script device refusal, Ventoy JSON, and watcher dry-runs. No model load. |
 
 Confirm the payload before touching a stick:
 
@@ -100,9 +110,22 @@ This builds a sparse image file and boots that file. It does not write a USB sti
 
 `./build/make-test-image.sh --refuse-test` checks that `/dev/sda` and `/dev/nvme0n1` are rejected and a regular file is accepted. `test-offline.sh` already runs that check.
 
-## Step 2: Prepare the 64 GB USB stick (manual, one time)
+## USB size
 
-Run the commands in this step from the repository root. Ventoy 1.1.18 erases the disk you give it. The ISOs plus models use a few GB. Leave the rest of the stick empty. It is too small to be the only copy of a large disk, and the stick you booted from is a poor image destination.
+Two profiles. The scripts still refuse to flash a stick. You copy onto the stick yourself in Step 2.
+
+| Profile | What is on the stick | Payload | Stick |
+| --- | --- | --- | --- |
+| Full | SystemRescue 13.02, Clonezilla live 3.3.3-37, the 0.6B, 1B, and 4B GGUFs, Linux `llama-server`, and the optional Windows and macOS CPU binaries | about 6.0–6.3 GB | **8 GB or larger**. 16 GB, or a 64 GB Toughmax, leaves room |
+| Slim | SystemRescue 13.02 and Llama-3.2-1B-Instruct Q4_K_M | about 2.5 GB | **4 GB** |
+
+Pinned sizes: the SystemRescue ISO is 1,381,629,952 bytes. The three GGUF files are 3,789,195,520 bytes together. The 1B file alone is 807,694,464 bytes. Slim is that ISO plus the 1B file, built with `--slim`. Ventoy's own partitions sit on top of the payload, which is why the slim stick is planned as 2.5 GB rather than the raw sum.
+
+`./build/fetch-host-binaries.sh` is optional. Skip it on a slim 4 GB stick if the extra Windows and macOS binaries would crowd the filesystem.
+
+## Step 2: Prepare the USB stick (manual, one time)
+
+Run the commands in this step from the repository root. Ventoy 1.1.18 erases the disk you give it. Use an 8 GB or larger stick for the full profile, or a 4 GB stick for `--slim`. Leave the rest of the stick empty. It is too small to be the only copy of a large disk, and the stick you booted from is a poor image destination.
 
 ### 1. Identify the stick
 
@@ -112,7 +135,7 @@ Plug in the USB stick. Leave the PC's internal disks alone.
 lsblk -o NAME,SIZE,MODEL,TRAN
 ```
 
-Use the whole-disk row whose `TRAN` is `usb` and whose `SIZE` is about 64G. The name looks like `sdb`. Partitions (`sdb1`) are the wrong target for the installer. In the commands below, replace `sdX` with that name. If two USB disks are present, unplug the one you are not installing.
+Use the whole-disk row whose `TRAN` is `usb` and whose `SIZE` is the stick you mean to erase (4G for slim, 8G or larger for the full profile). The name looks like `sdb`. Partitions (`sdb1`) are the wrong target for the installer. In the commands below, replace `sdX` with that name. If two USB disks are present, unplug the one you are not installing.
 
 ### 2. Install Ventoy (GPT, Secure Boot support)
 
@@ -152,7 +175,12 @@ sudo cp --no-preserve=mode,ownership \
   /mnt/ventoy/
 sudo mkdir -p /mnt/ventoy/ai
 sudo cp -r --no-preserve=mode,ownership ai/. /mnt/ventoy/ai/
+sudo cp -r --no-preserve=mode,ownership usb-root/. /mnt/ventoy/
 ```
+
+`usb-root/` puts `Start-Redeem-Linux.sh`, `Start-Redeem.desktop`, `Start-Redeem-macOS.command`, and `Start-Redeem-Windows.bat` at the root of `LABEL=Ventoy`, and `ventoy/` next to them. The stock ISO files are copied unchanged. Ventoy applies `ventoy/ventoy.json` in memory at boot.
+
+Skip the Clonezilla copy on a slim 4 GB stick. The full profile keeps it.
 
 Optional: `assemble-ai.sh` already put a finder at `ai/boot/autorun`. To also have it at `boot/autorun` on the stick:
 
@@ -193,18 +221,103 @@ After that loader is trusted, Ventoy's default does not re-check every EFI file 
 
 If the machine shows a Linpus lite error or a security violation and never offers the MOK screen, this stick will not boot there. Disabling Secure Boot can make Windows ask for the BitLocker recovery key on the next boot. Do that only when the owner already has the 48-digit key. This toolkit will not type it. There is no signed Ubuntu ISO on this stick as a fallback.
 
-### 3. Choose an ISO at the Ventoy menu
+### 3. Ventoy boots SystemRescue with no keypress
+
+`ventoy/ventoy.json` sets `VTOY_DEFAULT_IMAGE` to `/systemrescue-13.02-amd64.iso` and `VTOY_MENU_TIMEOUT` to 5. Ventoy highlights SystemRescue and boots it after 5 seconds. Press the down arrow during those 5 seconds to pick Clonezilla instead.
 
 | Menu entry | Use it when |
 | --- | --- |
-| `systemrescue-13.02-amd64.iso` | You want diagnostics, `rescue-ai`, or GNU ddrescue. |
+| `systemrescue-13.02-amd64.iso` | Diagnostics, `rescue-ai`, or GNU ddrescue. This is the default. |
 | `clonezilla-live-3.3.3-37-amd64.iso` | The disk still reads cleanly and you want a filesystem-aware image onto a different disk. |
 
-Boot SystemRescue for Step 4. Reboot into Clonezilla only for the imaging case in [Clone before any repair](#clone-before-any-repair).
+The ISO file on the stick is the stock SystemRescue 13.02 image. Its SHA-256 stays `ad4d670b72859d887c7960142a9a9d36a3e50446694a035e254442f65d6e7572`. Ventoy's `conf_replace` swaps the boot menus in memory:
+
+- UEFI reads `/boot/grub/grubsrcd.cfg` from the ISO and uses `/ventoy/grubsrcd.cfg` instead.
+- BIOS reads `/sysresccd/boot/syslinux/sysresccd_sys.cfg` and uses `/ventoy/sysresccd_sys.cfg` instead.
+
+Those copies append `sysrescuecfg=/redeem.yaml` to the default entry and set the SystemRescue menu to 2 seconds (`set timeout=2`, syslinux `TIMEOUT 20`). The volume label in that menu is still `RESCUE1302`. After Ventoy's 5 seconds and SystemRescue's 2 seconds, the machine continues into the live system.
+
+## Zero-click boot
+
+SystemRescue reads `/redeem.yaml` from the initramfs. Ventoy's injection plugin unpacks `/ventoy/redeem-initramfs.tar.gz` there. The ISO on disk is not edited. A small live-injection hook then copies `/usr/local/bin/redeem-autostart` onto the live root before `switch_root`.
+
+`redeem.yaml` sets:
+
+- `global.dostartx: true`. `tty1` is left unset so X.Org can take tty1.
+- `autorun` with `ar_disable: false`, `ar_nowait: true`, `ar_ignorefail: true`, and an exec entry that runs `/usr/local/bin/redeem-autostart --stage mount`.
+- `gui_autostart` with `terminal: true` running `/usr/local/bin/redeem-autostart --stage gui`.
+
+`--stage mount` waits up to 15 seconds for `LABEL=Ventoy`. If that label is missing, it scans partitions read-only for `ai/scripts/rescue-ai` and mounts the match at `/mnt/ventoy` with `-o ro`. It also starts a oneshot systemd unit, `redeem-fallback.service`, which runs `--stage fallback`.
+
+`--stage gui` runs when the desktop is up. It starts `/mnt/ventoy/ai/scripts/rescue-ai` with `--lan` left off. That collects read-only diagnostics, prints and saves the first diagnosis turn, and opens Firefox at `http://127.0.0.1:8080`.
+
+`--stage fallback` waits 22 seconds. If `/tmp/.X11-unix/X0` exists or an `Xorg` process is running, or if `llama-server` is already running, it exits and does not start a second server. If X did not start, it runs `chvt 2` when that command exists and starts `rescue-ai --cli` on tty2.
+
+`--lan` stays off unless you start `rescue-ai` yourself and pass it.
+
+## Plug into a computer that is already on
+
+You do not have to reboot. The launchers live at the root of `LABEL=Ventoy`. All of them leave `--lan` off. None of them unlock BitLocker, FileVault, or LUKS.
+
+| File | What a double-click does |
+| --- | --- |
+| `Start-Redeem-Linux.sh` and `Start-Redeem.desktop` | Runs `ai/scripts/rescue-ai` on a Linux desktop and opens `http://127.0.0.1:8080`. With no display, it uses `--cli`. |
+| `Start-Redeem-macOS.command` | Finder opens Terminal. `ai/scripts/collect-diag-macos.sh` records `diskutil list`, `diskutil info`, APFS layout, `fdesetup status`, and recent storage log lines. BM25 runs over `ai/kb/*.md`. `llama-server` comes from `ai/bin/macos-arm64/` or `ai/bin/macos-x64/`, or from `RESCUE_ENDPOINT` when that server answers. The first turn is printed and the browser opens. |
+| `Start-Redeem-Windows.bat` | Explorer runs `ai/scripts/rescue-windows.ps1`. It records `Get-Disk`, `Get-PhysicalDisk`, `Get-Partition`, `Get-Volume`, `Get-BitLockerVolume` status, and recent Disk/NTFS System log errors. It ranks `ai/kb/*.md`, starts `ai/bin/win-x64/llama-server.exe` (CPU, model picked from `Win32_OperatingSystem.FreePhysicalMemory`), prints the first turn, and opens the browser. |
+
+exFAT does not keep a Unix execute bit. On Linux, `bash Start-Redeem-Linux.sh` works if the kernel refuses to exec the file. On macOS, a `.command` file needs the execute bit the first time; Finder will offer to set it.
+
+Host binaries are optional and are not part of the Linux boot path. `./build/fetch-host-binaries.sh` checks the pinned SHA-256, then `assemble-ai.sh` copies them into `ai/bin/win-x64/`, `ai/bin/macos-arm64/`, and `ai/bin/macos-x64/`. The Windows and macOS archives are llama.cpp `b12110`, the binary build named by the `v0.9.0` release. They are CPU builds (`llama-b12110-bin-win-cpu-x64.zip`, `llama-b12110-bin-macos-arm64.tar.gz`, `llama-b12110-bin-macos-x64.tar.gz`).
+
+## Optional: start when this stick is plugged in
+
+This is for a computer you own. It does not run on the suspect PC unless you install it there yourself. The watcher starts Redeem only when the filesystem UUID matches the one you pass. An empty UUID, `*`, `any`, or anything that is not an exFAT serial (`XXXX-XXXX` or 8 hex digits) or a 128-bit UUID is refused.
+
+Print the UUID, then install. `--dry-run` prints the files and does not write them. `--uninstall` removes them.
+
+Linux, from the stick or from this repository:
+
+```sh
+./scripts/host/install-watcher.sh --detect
+./scripts/host/install-watcher.sh --os linux --uuid ABCD-1234 --dry-run
+./scripts/host/install-watcher.sh --os linux --uuid ABCD-1234
+```
+
+`--detect` prints `ID_FS_UUID` for the volume labeled `Ventoy`. The install writes a udev rule that matches that exact `ENV{ID_FS_UUID}`, a system unit, and a `systemd --user` unit. Both units run `linux-usb-launch.sh`, which mounts the volume read-only when it is not already mounted and starts `Start-Redeem-Linux.sh`. A second plug event does not start a second server.
+
+macOS:
+
+```sh
+./scripts/host/install-watcher.sh --os macos --uuid ABCD-1234 --dry-run
+./scripts/host/install-watcher.sh --os macos --uuid ABCD-1234
+```
+
+That writes `~/Library/LaunchAgents/com.redeem.usbwatcher.plist` with `StartOnMount`. The wrapper reads `diskutil info`. If the volume that just mounted is not the pinned UUID, it exits. A match opens `Start-Redeem-macOS.command`.
+
+Windows, in PowerShell:
+
+```powershell
+.\scripts\host\install-watcher.ps1 -Detect
+.\scripts\host\install-watcher.ps1 -Uuid ABCD-1234 -DryRun
+.\scripts\host\install-watcher.ps1 -Uuid ABCD-1234
+```
+
+`-DryRun` and `-Uninstall` do the same jobs as the shell flags. The task starts `windows-volume-watcher.ps1`, which waits for a volume arrival and compares the volume serial and the partition GUID to `-Uuid`. Any other disk is ignored. A match starts `Start-Redeem-Windows.bat`.
+
+Uninstall:
+
+```sh
+./scripts/host/install-watcher.sh --os linux --uninstall
+./scripts/host/install-watcher.sh --os macos --uninstall
+```
+
+```powershell
+.\scripts\host\install-watcher.ps1 -Uninstall
+```
 
 ## Step 4: Run `rescue-ai` inside SystemRescue
 
-SystemRescue drops you in a root shell. It does not run `boot/autorun` at boot. That file is not inside the ISO. You start it by hand.
+With the `ventoy/` tree from Step 2, you do not type this. The zero-click path mounts the stick read-only, starts X, and runs `rescue-ai`. If X fails, tty2 runs `rescue-ai --cli` after 22 seconds. The steps below are the same work, done by hand, when you booted without that tree or you want to start it again.
 
 ### 1. Mount the Ventoy partition read-only
 
@@ -376,7 +489,21 @@ After an image file exists, run `testdisk`, `e2fsck -n`, `ntfsinfo`, or a read-o
 | `ai/scripts/kb-retrieve.awk` | BM25 over `kb/`. |
 | `ai/scripts/rescue-chat.py` | OpenAI-compatible client and terminal chat. |
 | `ai/boot/autorun` | Finder, copied by `assemble-ai.sh`. |
-| `boot/autorun` | Optional second copy of that finder. |
+| `ai/scripts/redeem-autostart` | Same helper the initramfs injection installs. |
+| `ai/scripts/collect-diag-macos.sh` | Read-only macOS collector. |
+| `ai/scripts/rescue-windows.ps1` | Read-only Windows collector and launcher. |
+| `ai/bin/win-x64/llama-server.exe` | Optional. Present after `fetch-host-binaries.sh`. |
+| `ai/bin/macos-arm64/llama-server` | Optional. Apple silicon. |
+| `ai/bin/macos-x64/llama-server` | Optional. Intel Mac. |
+| `ventoy/ventoy.json` | 5 second Ventoy timeout, default ISO, injection, conf_replace. |
+| `ventoy/redeem-initramfs.tar.gz` | `/redeem.yaml` and `/usr/local/bin/redeem-autostart`. |
+| `ventoy/grubsrcd.cfg` | In-memory UEFI menu. Default entry has `sysrescuecfg=/redeem.yaml`. |
+| `ventoy/sysresccd_sys.cfg` | In-memory BIOS menu. Same parameter, 2 second timeout. |
+| `Start-Redeem-Linux.sh` | Linux desktop launcher. |
+| `Start-Redeem.desktop` | Same launcher from a file manager. |
+| `Start-Redeem-macOS.command` | macOS launcher. |
+| `Start-Redeem-Windows.bat` | Windows launcher. |
+| `boot/autorun` | Optional second copy of the finder. |
 
 `/dev/sdX2` (`VTOYEFI`) is Ventoy's EFI partition. Leave it for the firmware and the MOK certificate. There is no Ubuntu ISO in this version.
 
@@ -398,7 +525,7 @@ The launcher walks **down** the ladder above. It never runs an AVX2 binary on a 
 
 ## ARM64
 
-ARM64 is not in this tree. The SystemRescue and Clonezilla ISOs pinned here are amd64, and `build-llama.sh` does not build an aarch64 `llama-server`. Snapdragon Windows laptops, ARM Macs, and ARM boards will not boot this stick. Phones and tablets stay browser clients (`--lan`).
+The bootable images are amd64. `build-llama.sh` does not build an aarch64 `llama-server`, so Snapdragon Windows laptops, ARM Macs, and ARM boards will not boot this stick. A Mac that is already running can use `Start-Redeem-macOS.command` and `ai/bin/macos-arm64/llama-server`. Phones and tablets stay browser clients (`--lan`).
 
 ## Benchmark summary
 
@@ -419,24 +546,31 @@ The 4B critical fail is an example `ddrescue` onto `/dev/sdb` and `/dev/sdb2`, d
 ## Repository layout
 
 ```text
-scripts/rescue-ai          launcher
-scripts/collect-diag.sh    read-only lsblk, blkid, smartctl, dmesg, efibootmgr, NTFS, BitLocker, journal
-scripts/build-prompt.sh    safety rules plus retrieved notes
-scripts/kb-retrieve.awk    BM25 over kb/
-scripts/rescue-chat.py     OpenAI-compatible client and CLI
-scripts/test-offline.sh    shellcheck, rubric, collector, device refusal
-kb/                        knowledge pack
-boot/autorun               manual finder, not an ISO patch
-build/versions.env         pinned ISO, Ventoy, and llama.cpp versions
-build/models.tsv           pinned GGUF names, hashes, sizes, roles
-build/lib.sh               checksums, rtk wrapper, image-path refusal
-build/fetch-isos.sh        Ventoy, SystemRescue, Clonezilla
-build/fetch-models.sh      three GGUF files
-build/build-llama.sh       avx2 / avx / sse4 llama-server
-build/assemble-ai.sh       ai/ tree
-build/make-test-image.sh   sparse image only, refuses /dev
-build/qemu-boot-test.sh    headless boot of that image
-bench/                     scenarios, rubric, runner, RESULTS.md
+scripts/rescue-ai                 Linux launcher
+scripts/collect-diag.sh           read-only lsblk, blkid, smartctl, dmesg, efibootmgr, NTFS, BitLocker, journal
+scripts/build-prompt.sh           safety rules plus retrieved notes
+scripts/kb-retrieve.awk           BM25 over kb/
+scripts/rescue-chat.py            OpenAI-compatible client and CLI
+scripts/test-offline.sh           shellcheck, rubric, collector, device refusal, Ventoy, watchers
+scripts/host/                     macOS and Windows collectors, UUID watcher installers
+boot/autorun                      manual finder
+boot/redeem-autostart             mount, GUI, and tty2 fallback stages
+boot/redeem.yaml                  SystemRescue dostartx and autorun config
+boot/systemrescue-13.02/          stock 13.02 grub and syslinux text, checked against the ISO
+boot/live-injection/              copies redeem-autostart onto the live root
+usb-root/                         launchers copied to the stick root
+build/versions.env                pinned ISO, Ventoy, llama.cpp, and host binary checksums
+build/models.tsv                  pinned GGUF names, hashes, sizes, roles
+build/lib.sh                      checksums, rtk wrapper, image-path refusal
+build/fetch-isos.sh               Ventoy, SystemRescue, Clonezilla
+build/fetch-models.sh             GGUF files; --slim keeps the 1B model
+build/fetch-host-binaries.sh      optional Windows and macOS llama-server
+build/build-llama.sh              avx2 / avx / sse4 llama-server
+build/assemble-ai.sh              ai/ tree; calls assemble-ventoy.sh
+build/assemble-ventoy.sh          usb-root/ventoy, ISO left unchanged
+build/make-test-image.sh          sparse image only, refuses /dev
+build/qemu-boot-test.sh           headless boot of that image
+bench/                            scenarios, rubric, runner, RESULTS.md
 ```
 
 ## Licenses

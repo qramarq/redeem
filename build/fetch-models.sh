@@ -12,10 +12,40 @@ dest_dir=$root/build/cache/models
 manifest=$root/build/models.tsv
 mkdir -p "$dest_dir"
 
-only=${1:-}
+usage() {
+  cat <<'EOF'
+usage: fetch-models.sh [--slim] [ID]
+
+--slim downloads only Llama-3.2-1B-Instruct Q4_K_M (the 4 GB USB profile).
+An optional ID or role still limits the download further.
+EOF
+}
+
+SLIM=0
+only=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --slim)
+      SLIM=1
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      [[ -z $only ]] || die "unknown argument: $1"
+      only=$1
+      shift
+      ;;
+  esac
+done
 
 while IFS=$'\t' read -r id local_file repo remote_file sha bytes _min role; do
   [[ -n $id && $id != \#* ]] || continue
+  if [[ $SLIM -eq 1 && $id != llama32-1b ]]; then
+    continue
+  fi
   if [[ -n $only && $id != "$only" && $role != "$only" ]]; then
     continue
   fi

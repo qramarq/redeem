@@ -25,10 +25,10 @@ usage: make-test-image.sh [--image FILE] [--size 16G] [--serial-console]
                           [--refuse-test]
 
 Creates a sparse raw image and installs Ventoy into it with -I -g -s.
-ISOs from build/cache/isos and the assembled ai/ tree are copied onto the
-exFAT partition. --serial-console rewrites the image's GRUB config so a
-headless QEMU run can log the menu. Do not use that flag for a stick a
-person will boot on real hardware.
+ISOs from build/cache/isos, the assembled ai/ tree, and usb-root/ (launchers
+and ventoy/) are copied onto the exFAT partition. --serial-console rewrites
+the image's GRUB config so a headless QEMU run can log the menu. Do not use
+that flag for a stick a person will boot on real hardware.
 
 This script refuses /dev/* and any path that is a block or character device.
 EOF
@@ -175,6 +175,9 @@ assert_loop_backs_image "$LOOP" "$IMAGE"
 if [[ ! -x $root/ai/scripts/rescue-ai ]]; then
   "$root/build/assemble-ai.sh"
 fi
+if [[ ! -f $root/usb-root/ventoy/ventoy.json ]]; then
+  "$root/build/assemble-ventoy.sh"
+fi
 
 MNT=$(mktemp -d)
 if ! sudo mount -t exfat "${LOOP}p1" "$MNT" 2>/dev/null; then
@@ -193,6 +196,11 @@ fi
 shopt -u nullglob
 sudo mkdir -p "$MNT/ai"
 sudo cp -r --no-preserve=mode,ownership "$root/ai/." "$MNT/ai/"
+if [[ -d $root/usb-root ]]; then
+  # Launchers and ventoy/ land at the root of LABEL=Ventoy. The image file
+  # is still the only write target; assert_safe_image already ran.
+  sudo cp -r --no-preserve=mode,ownership "$root/usb-root/." "$MNT/"
+fi
 printf 'payload on image:\n'
 sudo ls -lh "$MNT" "$MNT/ai" "$MNT/ai/bin" "$MNT/ai/models" || true
 

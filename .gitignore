@@ -8,6 +8,7 @@
 *.fd
 ai/
 build/cache/
+usb-root/ventoy/
 build/src/
 build/work/
 bench/out/
