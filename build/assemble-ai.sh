@@ -49,15 +49,19 @@ cp -a "$root/scripts/rescue-ai" \
   "$root/scripts/host/linux-usb-launch.sh" \
   "$root/scripts/host/macos-usb-launch.sh" \
   "$root/scripts/host/windows-volume-watcher.ps1" \
+  "$root/scripts/host/bitlocker-windows.ps1" \
+  "$root/scripts/rescue-bitlocker.sh" \
   "$root/boot/redeem-autostart" \
   "$dest/scripts/"
+cp -a "$root/scripts/rescue-bitlocker.sh" "$dest/scripts/redeem-bitlocker"
 cp -a "$root/kb/." "$dest/kb/"
 cp -a "$root/boot/autorun" "$dest/boot/autorun"
 cp -a "$root/build/models.tsv" "$dest/models/manifest.tsv"
 chmod +x "$dest/scripts/rescue-ai" "$dest/scripts/collect-diag.sh" \
   "$dest/scripts/build-prompt.sh" "$dest/scripts/collect-diag-macos.sh" \
   "$dest/scripts/install-watcher.sh" "$dest/scripts/linux-usb-launch.sh" \
-  "$dest/scripts/macos-usb-launch.sh" "$dest/scripts/redeem-autostart"
+  "$dest/scripts/macos-usb-launch.sh" "$dest/scripts/redeem-autostart" \
+  "$dest/scripts/rescue-bitlocker.sh" "$dest/scripts/redeem-bitlocker"
 
 shopt -s nullglob
 bins=("$root/build/cache/bin"/llama-server-*)

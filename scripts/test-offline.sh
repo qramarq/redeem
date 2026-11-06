@@ -192,4 +192,160 @@ else
 fi
 rm -rf "$watcher_out" "$watcher_home"
 
+bl=scripts/rescue-bitlocker.sh
+bit_fix=scripts/testdata/bitlocker
+bit_out=$(mktemp)
+if bash "$bl" parse-dump --fixture "$bit_fix/bitlk-clear-key.txt" >"$bit_out" \
+  && grep -q $'clear_key\tyes' "$bit_out" \
+  && grep -q 'C1EAC1EA' "$bit_out" \
+  && grep -q $'\tclear-key$' "$bit_out" \
+  && grep -q 'A1B2C3D4' "$bit_out" \
+  && grep -q $'\trecovery-password$' "$bit_out" \
+  && grep -q $'\ttpm-pin$' "$bit_out" \
+  && grep -q $'\texternal-key$' "$bit_out" \
+  && ! grep -q 'deadbeefcafebabe' "$bit_out"; then
+  printf 'ok bitlocker-parse-clear\n'
+else
+  printf 'FAIL bitlocker-parse-clear\n' >&2
+  cat "$bit_out" >&2
+  fail=1
+fi
+if bash "$bl" parse-dump --fixture "$bit_fix/bitlk-no-clear.txt" >"$bit_out" \
+  && grep -q $'clear_key\tno' "$bit_out" \
+  && grep -q 'D00D1234' "$bit_out" \
+  && grep -q 'C0FFEE01' "$bit_out" \
+  && ! grep -q 'naclshouldnotappear' "$bit_out"; then
+  printf 'ok bitlocker-parse-no-clear\n'
+else
+  printf 'FAIL bitlocker-parse-no-clear\n' >&2
+  fail=1
+fi
+if bash "$bl" parse-dump --fixture "$bit_fix/dislocker-metadata.txt" >"$bit_out" \
+  && grep -q $'source\tdislocker-metadata' "$bit_out" \
+  && grep -q 'AES-XTS-128' "$bit_out" \
+  && grep -q $'\tclear-key$' "$bit_out" \
+  && grep -q $'\trecovery-password$' "$bit_out" \
+  && ! grep -q '00112233445566778899aabbccddeeff' "$bit_out"; then
+  printf 'ok bitlocker-parse-dislocker\n'
+else
+  printf 'FAIL bitlocker-parse-dislocker\n' >&2
+  cat "$bit_out" >&2
+  fail=1
+fi
+if bash "$bl" inspect --fixture "$bit_fix/bitlk-clear-key.txt" --smart-health failed >"$bit_out" \
+  && grep -q 'clear_key: yes' "$bit_out" \
+  && grep -q 'Do not run manage-bde -off' "$bit_out" \
+  && grep -q 'account.microsoft.com/devices/recoverykey' "$bit_out" \
+  && grep -q 'Do not paste' "$bit_out" \
+  && ! grep -q 'deadbeefcafebabe' "$bit_out"; then
+  printf 'ok bitlocker-inspect-guidance\n'
+else
+  printf 'FAIL bitlocker-inspect-guidance\n' >&2
+  fail=1
+fi
+if bash "$bl" version-at-least 2.3.0 2.8.7 >/dev/null \
+  && ! bash "$bl" version-at-least 2.3.0 2.2.9 >/dev/null; then
+  printf 'ok bitlocker-version\n'
+else
+  printf 'FAIL bitlocker-version\n' >&2
+  fail=1
+fi
+secret='s3cret-value'
+if bash "$bl" unlock --password "$secret" /dev/sda /mnt/x >"$bit_out" 2>&1; then
+  printf 'FAIL bitlocker-password-flag (expected rejection)\n' >&2
+  fail=1
+elif grep -q "$secret" "$bit_out"; then
+  printf 'FAIL bitlocker-password-flag echoed the secret\n' >&2
+  fail=1
+else
+  printf 'ok bitlocker-refuse-password\n'
+fi
+expect_reject bitlocker-refuse-rw bash "$bl" unlock --rw /dev/sda /mnt/x
+expect_reject bitlocker-refuse-key bash "$bl" unlock --key hunter2 /dev/sda
+expect_reject bitlocker-refuse-shaped bash "$bl" unlock /dev/sda 111111-222222-333333-444444-555555-666666-777777-888888
+expect_reject bitlocker-refuse-volume-key bash "$bl" inspect --dump-volume-key /dev/sda
+stub=$(mktemp -d)
+cat >"$stub/cryptsetup" <<EOF
+#!/bin/sh
+printf '%s\n' "\$*" >>"$stub/called"
+exit 99
+EOF
+cat >"$stub/dislocker" <<EOF
+#!/bin/sh
+printf '%s\n' "dislocker \$*" >>"$stub/called"
+exit 99
+EOF
+cat >"$stub/dislocker-metadata" <<EOF
+#!/bin/sh
+printf '%s\n' "meta \$*" >>"$stub/called"
+exit 99
+EOF
+cat >"$stub/mount" <<EOF
+#!/bin/sh
+printf '%s\n' "mount \$*" >>"$stub/called"
+exit 99
+EOF
+chmod +x "$stub"/*
+if PATH="$stub:$PATH" bash "$bl" inspect --dry-run /dev/sda >"$bit_out" \
+  && PATH="$stub:$PATH" bash "$bl" unlock --dry-run --clearkey /dev/nvme0n1p3 /mnt/ro-test >>"$bit_out" \
+  && grep -q 'cryptsetup bitlkDump' "$bit_out" \
+  && grep -q 'cryptsetup open --type bitlk --readonly' "$bit_out" \
+  && grep -q 'dislocker -r -V' "$bit_out" \
+  && grep -q -- '--clearkey' "$bit_out" \
+  && grep -q 'mount -o ro,nodev,nosuid,noexec' "$bit_out" \
+  && grep -q 'mount -o loop,ro,nodev,nosuid,noexec' "$bit_out" \
+  && [[ ! -e $stub/called ]]; then
+  printf 'ok bitlocker-dry-run-no-exec\n'
+else
+  printf 'FAIL bitlocker-dry-run-no-exec\n' >&2
+  cat "$bit_out" >&2
+  [[ -e $stub/called ]] && cat "$stub/called" >&2
+  fail=1
+fi
+rm -rf "$stub" "$bit_out"
+
+if bash build/fetch-isos.sh --help | grep -q -- '--with-winpe' \
+  && bash build/fetch-isos.sh --help | grep -q -- '--winpe-iso' \
+  && grep -q '8c4c670c9c84d6c4b5a9c32e0aa5a55d8c23de851d259207d54679ea774c2498' build/versions.env; then
+  printf 'ok fetch-winpe-flags\n'
+else
+  printf 'FAIL fetch-winpe-flags\n' >&2
+  fail=1
+fi
+expect_reject fetch-winpe-dev bash build/fetch-isos.sh --winpe-iso /dev/sda
+expect_reject fetch-winpe-nvme bash build/fetch-isos.sh --winpe-iso /dev/nvme0n1
+fake_iso=$(mktemp --suffix=.iso)
+printf 'not-an-iso\n' >"$fake_iso"
+expect_reject fetch-winpe-unverified bash build/fetch-isos.sh --winpe-iso "$fake_iso"
+bad_sum=$(printf 'ab%.0s' {1..32})
+expect_reject fetch-winpe-bad-sum bash build/fetch-isos.sh --winpe-iso "$fake_iso" --winpe-sha256 "$bad_sum"
+rm -f "$fake_iso"
+
+ai_tmp=$(mktemp -d)
+if bash build/assemble-ai.sh "$ai_tmp" >"$ai_tmp/log" \
+  && [[ -x $ai_tmp/scripts/redeem-bitlocker ]] \
+  && [[ -f $ai_tmp/scripts/rescue-bitlocker.sh ]] \
+  && [[ -f $ai_tmp/scripts/bitlocker-windows.ps1 ]] \
+  && cmp -s scripts/rescue-bitlocker.sh "$ai_tmp/scripts/redeem-bitlocker" \
+  && [[ -f usb-root/BitLocker-Windows.bat ]]; then
+  printf 'ok assemble-bitlocker\n'
+else
+  printf 'FAIL assemble-bitlocker\n' >&2
+  cat "$ai_tmp/log" >&2
+  fail=1
+fi
+rm -rf "$ai_tmp"
+
+fw_diag=$(mktemp)
+if bash scripts/collect-diag.sh --out "$fw_diag" --max-bytes 12000 >/dev/null \
+  && grep -q '## firmware' "$fw_diag" \
+  && grep -q 'Secure Boot:' "$fw_diag" \
+  && grep -q 'tpm' "$fw_diag"; then
+  printf 'ok collect-diag-firmware\n'
+else
+  printf 'FAIL collect-diag-firmware\n' >&2
+  fail=1
+fi
+rm -f "$fw_diag"
+
 exit "$fail"

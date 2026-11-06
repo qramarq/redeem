@@ -1,0 +1,65 @@
+dislocker-metadata by Romain Coltel, v0.7.3 (compiled for Linux/x86_64)
+=====================[ BitLocker information structure ]=====================
+  Version: 2
+  Current state: ENCRYPTED (4)
+  Next state: ENCRYPTED (4)
+=====================
+  ----------------------------{ Dataset header }----------------------------
+    Dataset GUID: '11111111-2222-3333-4444-555555555555'
+    Encryption Type: AES-XTS-128 (0x8004)
+    Epoch Timestamp: 1730822400 sec, that to say Tue Nov  5 16:00:00 2026
+  --------------------------------------------------------------------------
+
+=======[ Datum n°1 information ]=======
+Datum entry type: 2
+   `--> ENTRY TYPE VMK
+Datum value type: 8
+   `--> VMK
+[* Recovery Key GUID *]: 'a1b2c3d4-1111-2222-3333-444444444444'
+Nonce:
+00 11 22 33 44 55 66 77 88 99 aa bb
+   ------ Nested datum(s) ------
+Datum value type: 3
+   `--> STRETCH KEY
+Datum value type: 5
+   `--> AES-CCM
+   ------------------------------
+=========================================
+
+=======[ Datum n°2 information ]=======
+Datum entry type: 2
+   `--> ENTRY TYPE VMK
+Datum value type: 8
+   `--> VMK
+Recovery Key GUID: 'c0ffee01-aaaa-bbbb-cccc-ddddeeeeffff'
+   ------ Nested datum(s) ------
+Datum value type: 6
+   `--> TPM_ENCODED
+   ------------------------------
+=========================================
+
+=======[ Datum n°3 information ]=======
+Datum entry type: 2
+   `--> ENTRY TYPE VMK
+Datum value type: 8
+   `--> VMK
+Recovery Key GUID: 'c1eac1ea-0000-1111-2222-333333333333'
+   ------ Nested datum(s) ------
+Datum value type: 1
+   `--> KEY
+Key:
+00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+   ------------------------------
+=========================================
+
+=======[ Datum n°4 information ]=======
+Datum entry type: 2
+   `--> ENTRY TYPE VMK
+Datum value type: 8
+   `--> VMK
+Recovery Key GUID: '44556677-aaaa-bbbb-cccc-ddddeeeeffff'
+   ------ Nested datum(s) ------
+Datum value type: 9
+   `--> EXTERNAL KEY
+   ------------------------------
+=========================================
